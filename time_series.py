@@ -2,7 +2,7 @@
 
 __author__ = "Jed Frechette (jedfrechette@gmail.com)"
 __version__ = "0.1"
-__date__ = "Aug 22, 2006"
+__date__ = "6 September 2006"
 
 from __future__ import division
 
@@ -101,3 +101,13 @@ def slopes(x, y):
     yp[0] = 2.0 * dy[0]/dx[0] - yp[1]
     yp[-1] = 2.0 * dy[-1]/dx[-1] - yp[-2]
     return yp
+
+def estimate_slope(x, y, n=1):
+    """Estimate the slope at each point in a dataset. If 'n' is specified a
+    'n' point running mean will be used to smooth the data before estimating
+    the slope."""
+    x_trimmed = x[int(n/2) : int(n/-2)]
+    y_smooth = [y_s for y_s in moving_average(y, n)]
+    
+    yp = slopes(x_trimmed, y_smooth)
+    return yp, x_trimmed
