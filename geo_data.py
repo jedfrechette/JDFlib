@@ -5,13 +5,13 @@ __author__ = "Jed Frechette (jedfrechette@gmail.com)"
 __version__ = "0.1"
 __date__ = "Aug 16, 2006"
 
+from time_series import slopes, smooth
 import ConfigParser
 import csv
-import time_series
 import scipy
 
 
-class Point:
+class Point(object):
     """Storage for a 3D location and optional data associated with it."""
     def __init__(self, x, y, z, data=None):
         self.x = x
@@ -158,7 +158,7 @@ class TimeSeries(dict):
             x = self['x']
         if y == None:
             y = self['y']
-        self['yp'] = time_series.slopes(x, y)
+        self['yp'] = slopes(x, y)
     
     def running_mean(self, n, x=None, y=None):
         """Calculate a moving average using a 'n' point window. Averages are
@@ -168,10 +168,7 @@ class TimeSeries(dict):
             x = self['x']
         if y == None:
             y = self['y']
-        self[str(n) + 'pt_avg'] = [a for a in
-                                   time_series.moving_average(x, n)]
-        self[str(n) + 'pt_x'] = [a for a in
-                                 time_series.moving_average(y, n)]
+        self[str(n) + 'pt_avg'], self[str(n) + 'pt_x'] = smooth(y, n, x, )
 
 def try_config(config_parser, section, key):
     """Try to read a key from a specified section of a config file or fail
