@@ -5,11 +5,9 @@ __version__ = "0.1"
 __date__ = "6 September 2006"
 
 from __future__ import division
-from scipy import median
-
+from scipy import asarray, median, std, zeros
 from itertools import islice, tee, izip
 from collections import deque
-import scipy
 
 def bp2cal(year, year_0=1950):
     """Convert a year specified as calendar years BP to years BC/AD, where
@@ -40,7 +38,7 @@ def window(items, n):
         yield w # for a robust implementation: yield tuple(w)
         w.popleft()
         
-def moving_average(items, n):
+def moving_mean(items, n):
     """Generator that returns a 'n' point moving average from 'items'. Averages
     are not calculated for the tails of the series where a 'n' point window
     can't be achieved."""
@@ -57,6 +55,13 @@ def moving_median(items, n):
     can't be achieved."""
     for w in window(items, n):
         yield median(w)
+    
+def moving_std(items, n):
+    """Generator that returns a 'n' point moving standard deviation from
+    'items'. The standard deviation is not calculated for the tails of the
+    series where a 'n' point window can't be achieved."""
+    for w in window(items, n):
+        yield std(w)
         
 def slopes(x, y):
     """
@@ -85,10 +90,10 @@ def slopes(x, y):
     Icelandic Meteorological Office, March 2006 halldor at vedur.is)
     """
     # Cast key variables as float.
-    x = scipy.asarray(x, 'd')
-    y = scipy.asarray(y, 'd')
+    x = asarray(x, 'd')
+    y = asarray(y, 'd')
 
-    yp = scipy.zeros(y.shape, 'd')
+    yp = zeros(y.shape, 'd')
 
     dx = x[1:] - x[:-1]
     dy = y[1:] - y[:-1]
@@ -105,7 +110,7 @@ def smooth(y, n, x=None, method='mean'):
     series where a 'n' point window can't be achieved. If a 'x' list is
     specified a new list will be returned that has had the tails trimmed so
     that it is the same length as the smoothed list that is returned."""
-    methods = {'mean': moving_average(y, n),
+    methods = {'mean': moving_mean(y, n),
                'median': moving_median(y, n)}
     y_smooth = [y_s for y_s in methods[method]]
     if x:
