@@ -3,12 +3,11 @@ used by geoscientists."""
 
 __author__ = "Jed Frechette (jedfrechette@gmail.com)"
 __version__ = "0.1"
-__date__ = "Aug 16, 2006"
+__date__ = "20 September 2006"
 
 from time_series import slopes, smooth
 import ConfigParser
 import csv
-import scipy
 
 
 class Point(object):
@@ -104,21 +103,31 @@ class Collection(list):
 
 class TimeSeries(dict):
     """2D timeseries data."""
-    def __init__(self, x=None, y=None):
+    def __init__(self, x=None, y=None, dx=None, dy=None):
         super(TimeSeries, self).__init__()
-        if x == None:
-            self['x'] = []
-        else:
+        if x:
             self['x'] = x
-        if y == None:
-            self['y'] = []
         else:
+            self['x'] = []
+        if y:
             self['y'] = y
+        else:
+            self['y'] = []
+        if dx:
+            self['dx'] = dx
+        else:
+            self['dx'] = []
+        if dy:
+            self['dy'] =y
+        else:
+            self['dy'] = []
         
     def from_csv(self,
                  file_name,
                  x_col=0,
                  y_col=1,
+                 dx_col=None,
+                 dy_col=None,
                  delimiter=' ',
                  start_row=None,
                  end_row=None):
@@ -142,11 +151,19 @@ class TimeSeries(dict):
                                 raise ValueError
                             x = float(row[x_col])
                             y = float(row[y_col])
+                            if dx_col:
+                                dx = float(row[dx_col])
+                            if dy_col:
+                                dy = float(row[dy_col])
                         except ValueError:
                             print "Bad value skipping row: " + str(n_row)
                             continue
                         self['x'].append(x)
                         self['y'].append(y)
+                        if dx_col:
+                            self['dx'].append(dx)
+                        if dy_col:
+                            self['dy'].append(dy)
             finally:
                 input_file.close()
         except IOError:
