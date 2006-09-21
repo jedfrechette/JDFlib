@@ -2,10 +2,10 @@
 
 __author__ = "Jed Frechette (jedfrechette@gmail.com)"
 __version__ = "0.1"
-__date__ = "6 September 2006"
+__date__ = "21 September 2006"
 
 from __future__ import division
-
+from scipy import asarray, median, std, zeros
 from itertools import islice, tee, izip
 from collections import deque
 
@@ -48,18 +48,20 @@ def moving_mean(items, n):
         accu += last
         yield accu/n
         accu -= first
-        
-#def moving_dy_dx(x, y, n):
-#    """Generator that returns a 'n' point moving estimate of the slope dy/dy.
-#    Averages are not calculated for the tails of the series where a 'n' point
-#    window can't be achieved."""
-#    first_x, last_x = tee(x)
-#    first_y, last_y = tee(y)
-#    accu = sum(islice(last_items, n-1))
-#    for first, last in izip(first_items, last_items):
-#        accu += last
-#        yield accu/n
-#        accu -= first
+                
+def moving_median(items, n):
+    """Generator that returns a 'n' point moving median from 'items'. Medians
+    are not calculated for the tails of the series where a 'n' point window
+    can't be achieved."""
+    for w in window(items, n):
+        yield median(w)
+    
+def moving_std(items, n):
+    """Generator that returns a 'n' point moving standard deviation from
+    'items'. The standard deviation is not calculated for the tails of the
+    series where a 'n' point window can't be achieved."""
+    for w in window(items, n):
+        yield std(w)
         
 def slopes(x, y):
     """
@@ -101,12 +103,18 @@ def slopes(x, y):
     yp[-1] = 2.0 * dy[-1]/dx[-1] - yp[-2]
     return yp
 
-def estimate_slope(x, y, n=1):
-    """Estimate the slope at each point in a dataset. If 'n' is specified a
-    'n' point running mean will be used to smooth the data before estimating
-    the slope."""
-    x_trimmed = x[int(n/2) : int(n/-2)]
-    y_smooth = [y_s for y_s in moving_average(y, n)]
-    
-    yp = slopes(x_trimmed, y_smooth)
-    return yp, x_trimmed
+def smooth(y, n, x=None, method='mean'):
+    """Smooth a time series using the specified method with a 'n' point moving
+    window. By default a running mean will be used. Valid methods are 'mean'
+    and 'median'. Smoothed values are not calculated for the tails of the
+    series where a 'n' point window can't be achieved. If a 'x' list is
+    specified a new list will be returned that has had the tails trimmed so
+    that it is the same length as the smoothed list that is returned."""
+    methods = {'mean': moving_mean(y, n),
+               'median': moving_median(y, n)}
+    y_smooth = [y_s for y_s in methods[method]]
+    if x:
+        x_trimmed = x[int(n/2) : int(n/-2)]
+        return y_smooth, x_trimmed
+    else:
+        return y_smooth
