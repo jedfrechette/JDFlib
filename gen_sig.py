@@ -1,4 +1,4 @@
-#/usr/bin/env python
+#!/usr/bin/env python
 """Generate a .signature file."""
 
 __author__ = 'Jed Frechette <jedfrechette@gmail.com>'
@@ -16,9 +16,13 @@ class iCasualtyParser(HTMLParser):
         HTMLParser.__init__(self)
         self.dead = ''
         self.wounded = ''
+        sock = urlopen('http://icasualties.org')
+        self.feed(sock.read())
+        sock.close()
+        self.close()
         
     def handle_data(self, data):
-        """Extract the number of dead and wounded"""
+        """Extract the number of dead and wounded."""
         if 'US Casualties By Calendar' in data:
             self.line_num = self.getpos()[0] + 16
         elif self.getpos()[0] == self.line_num:
@@ -26,27 +30,19 @@ class iCasualtyParser(HTMLParser):
                 self.dead = data
             if self.getpos()[1] == 233:
                 self.wounded = data
- 
-    
-def iraq_casualties():
-    """Get the current number of coalition casualties in Iraq and return the
-    number of dead and wounded in a string."""
-    sock = urlopen('http://icasualties.org')
-    html_src = sock.read()
-    sock.close()
-    parser = iCasualtyParser()
-    parser.feed(html_src)
-    parser.close()
-    return '\n%s Dead, %s Wounded' % (parser.dead, parser.wounded)
+                
+    def tag(self):
+        """Return a tagline listing the number of dead and wounded."""
+        return '\n%s Dead, %s Wounded' % (self.dead, self.wounded)
+                 
 
 if __name__ == '__main__':
     dest = '/home/jdfrechette/briefcase'
-    base_sig = ['--\n',
-                'Jed Frechette\n',
+    base_sig = ['Jed Frechette\n',
                 'http://jdfrechette.alturl.com\n']
-    tag = iraq_casualties()
+    parser = iCasualtyParser()
     
     sig = open(path.join(dest, '.signature'), 'w')
     sig.writelines(base_sig)
-    sig.write(tag)
+    sig.write(parser.tag())
     sig.close()
