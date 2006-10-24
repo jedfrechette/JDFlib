@@ -3,7 +3,7 @@
 
 __author__ = 'Jed Frechette <jedfrechette@gmail.com>'
 __version__ = '0.1'
-__date__ = 'Sep 22, 2006'
+__date__ = '24 October 2006'
 
 from HTMLParser import HTMLParser
 from os import path
@@ -24,12 +24,14 @@ class iCasualtyParser(HTMLParser):
     def handle_data(self, data):
         """Extract the number of dead and wounded."""
         if 'US Casualties By Calendar' in data:
-            self.line_num = self.getpos()[0] + 16
+            self.line_num = self.getpos()[0] + 17
         elif self.getpos()[0] == self.line_num:
-            if self.getpos()[1] == 145:
+            if self.getpos()[1] == 34:
                 self.dead = data
-            if self.getpos()[1] == 233:
+            if self.getpos()[1] == 61:
                 self.wounded = data
+#            print data
+#            print self.getpos()[1]
                 
     def tag(self):
         """Return a tagline listing the number of dead and wounded."""
