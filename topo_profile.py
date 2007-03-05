@@ -3,13 +3,14 @@
 
 __author__ = "Jed Frechette (jedfrechette@gmail.com)"
 __version__ = "0.1"
-__date__ = "Aug 17, 2006"
+__date__ = "4 March 2007"
 
 from optparse import OptionParser
 from os import path
 import ConfigParser
 import geo_data
 import pyx
+import pylab
 
 class Profile(geo_data.Collection):
     """A topographic profile."""
@@ -61,29 +62,46 @@ if __name__ == '__main__':
     
     # Plot the profile.
     # FIXME: Scale the results to an appropriate range.
-    x = [((18812 / profile.cum_dist()[-1]) * (pt)) / 1000
-         for pt in profile.cum_dist() if pt != 0]
+    x =profile.cum_dist()
+#    x = [((18812 / profile.cum_dist()[-1]) * (pt)) / 1000
+#         for pt in profile.cum_dist() if pt != 0]
     y = profile.value_list('z')
     print max(x)
     
-    c = pyx.canvas.canvas()
-    g = c.insert(pyx.graph.graphxy(width=25,
-                               x=pyx.graph.axis.linear(title='Distance along profile (km)'),
-                               y=pyx.graph.axis.linear(title='Elevation (m)')))
-    g.plot(pyx.graph.data.list(zip(x, y), x=1, y=2),
-           [pyx.graph.style.line([pyx.style.linewidth.Thin])])
-    
-    # TODO: Redo label generation so that it is not hardcoded.
-    g.finish()
-    label_cfg = ConfigParser.SafeConfigParser()
-    label_cfg.read('sites.cfg')
-    labels = geo_data.Collection()
-    labels.from_pt_csv('site_list.csv', label_cfg)
-    for l in labels:
-        x, y = g.pos(l.data['distance'] / 1000, l.z + 40)
-        g.text(x, y, l.data['Name'], [pyx.trafo.rotate(90),
-                                      pyx.text.valign.middle])
-    
-    g.writePDFfile('.'.join([path.splitext(opts.input_file)[0], 'pdf']))
+#    c = pyx.canvas.canvas()
+#    g = c.insert(pyx.graph.graphxy(width=25,
+#                               x=pyx.graph.axis.linear(title='Distance along profile (km)'),
+#                               y=pyx.graph.axis.linear(title='Elevation (m)')))
+#    g.plot(pyx.graph.data.list(zip(x, y), x=1, y=2),
+#           [pyx.graph.style.line([pyx.style.linewidth.Thin])])
+#    
+#    # TODO: Redo label generation so that it is not hardcoded.
+#    g.finish()
+#    label_cfg = ConfigParser.SafeConfigParser()
+#    label_cfg.read('sites.cfg')
+#    labels = geo_data.Collection()
+#    labels.from_pt_csv('site_list.csv', label_cfg)
+#    for l in labels:
+#        x, y = g.pos(l.data['distance'] / 1000, l.z + 40)
+#        g.text(x, y, l.data['Name'], [pyx.trafo.rotate(90),
+#                                      pyx.text.valign.middle])
+#    
+#    g.writePDFfile('.'.join([path.splitext(opts.input_file)[0], 'pdf']))
+    s_profile = geo_data.TimeSeries(x, y)
+    s_profile.running_mean(11)
+    fig = pylab.figure()
+    prof = pylab.subplot(211)
+    prof.plot(s_profile['11pt_x'], s_profile['11pt_avg'])
+    prof.plot(x, y)
+    prof.axis('tight')
+    map = pylab.subplot(212)
+    map.plot(profile.value_list('x'), profile.value_list('y'))
+    map.axis('equal')
+#    for pt_num in xrange(len(x)):
+#        if pt_num % 10 == 0:
+#            pylab.text(x[pt_num],
+#                       y[pt_num],
+#                       str(profile.value_list('pt_num')[pt_num]))
+    pylab.show()
     
     print 'Success'
