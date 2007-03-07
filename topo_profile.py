@@ -90,18 +90,35 @@ if __name__ == '__main__':
     s_profile = geo_data.TimeSeries(x, y)
     s_profile.running_mean(11)
     fig = pylab.figure()
+    
     prof = pylab.subplot(211)
     prof.plot(s_profile['11pt_x'], s_profile['11pt_avg'])
-    prof.plot(x, y)
-    prof.axis('tight')
+    prof.plot(x, y, '.')
+#    prof.axis('equal')
+
+    
     map = pylab.subplot(212)
     map.plot(profile.value_list('x'), profile.value_list('y'))
+    map.plot(profile.value_list('x'), profile.value_list('y'), '.')
+    
+    for pt_num in xrange(len(x)):
+        if pt_num % 10 == 0:
+            prof.plot([x[pt_num]],
+                      [y[pt_num]],
+                      'r.')
+            prof.text(x[pt_num],
+                      y[pt_num],
+                      str(profile.value_list('pt_num')[pt_num]))
+            map.text(profile.value_list('x')[pt_num],
+                     profile.value_list('y')[pt_num],
+                     str(profile.value_list('pt_num')[pt_num]))
+            map.plot([profile.value_list('x')[pt_num]],
+                     [profile.value_list('y')[pt_num]],
+                     'r.')
+    
     map.axis('equal')
-#    for pt_num in xrange(len(x)):
-#        if pt_num % 10 == 0:
-#            pylab.text(x[pt_num],
-#                       y[pt_num],
-#                       str(profile.value_list('pt_num')[pt_num]))
+    prof.set_xlim((14900, 15900))
+    prof.set_ylim((2230, 2270))
     pylab.show()
     
     print 'Success'
