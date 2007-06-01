@@ -3,7 +3,7 @@
 
 __author__ = 'Jed Frechette <jedfrechette@gmail.com>'
 __version__ = '0.1'
-__date__ = '4 February 2007'
+__date__ = '1 June 2007'
 
 from BeautifulSoup import BeautifulSoup
 from os import path
@@ -16,8 +16,8 @@ if __name__ == '__main__':
 
     soup = BeautifulSoup(urlopen('http://icasualties.org'))    
     dead = soup.body('span', id='lblCount')[0].find('font').string
-    wounded = soup.body('table', id='dgWnd')[0]
-    wounded = wounded.findAll('tr')[5].findAll('td')[-1].find('b').string
+    wounded = soup.body('table', id='dgYear')[0]
+    wounded = wounded.findAll('td')[-1].string
     tag = '%s Dead, %s Wounded' % (dead, wounded)
     
     sig = open(path.join(dest, '.signature'), 'w')
