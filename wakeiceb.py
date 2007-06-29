@@ -11,7 +11,7 @@ from subprocess import call
 if __name__ == '__main__':
     hostname = 'iceb.ath.cx'
     ip = gethostbyname(hostname)
-    hw_addr = '00:02:28:D6:B5:FC'
+    hw_addr = '00:02:2A:D6:B5:FC'
 
     cmd = 'wakeonlan'
     cmd_opts = '-i %s' %ip
