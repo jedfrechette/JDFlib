@@ -3,12 +3,12 @@
 
 __author__ = 'Jed Frechette <jdfrech@unm.edu>'
 __version__ = '0.1'
-__date__ = '28 July 2007'
+__date__ = '30 July 2007'
 
-import csv
 from os import popen
 from textwrap import wrap
 from urllib import urlopen
+import csv
 
 def check_gage(site_no, period=1):
     """Check a USGS gage and report basic discharge info.
@@ -19,20 +19,15 @@ def check_gage(site_no, period=1):
     
     Return:
     time_stamp     Tuple listing the dates and times of measurements.
-    discharge      Tuple listing the measured discharge.
-    site_name      The complete name of the site.
+    discharge      Tuple listing measured discharges.
+    site_name      The complete name for the site.
     url            A link to a graph of discharge for the last period + 1
                    days."""
-    url = '&'.join(['http://waterdata.usgs.gov/nm/nwis/uv?cb_00060=on',
-                    'format=rdb',
-                    'period=%s' % period,
+    url = '&'.join(['http://waterdata.usgs.gov/nm/nwis/uv?cb_00060=on', 
+                    'format=rdb', 
+                    'period=%s' % period, 
                     'site_no=%s' % site_no])
-    try:
-        data = urlopen(url)
-    except:
-        subj = '"check_gage.py failed"'
-        popen('mail -s %s %s' % (subj, 'jdfrech@unm.edu'), 'w').write(url)
-        raise
+    data = urlopen(url)
     time_stamp = []
     discharge = []
     n_headers = 0
@@ -64,8 +59,9 @@ def check_gage(site_no, period=1):
         data.close()
     return tuple(time_stamp), tuple(discharge), \
             site_name, \
-            url.replace('rdb', 'gif_default').replace('period=%s' % (period),
+            url.replace('rdb', 'gif_default').replace('period=%s' % (period), 
                                                       'period=%s' % (period+1))
+        
         
 def median(m):
     """median(m) returns a median of m.
@@ -77,15 +73,26 @@ def median(m):
         return m[index]
     else:
         return (m[index-1] + m[index])/2.0 
+        
             
 if __name__ == '__main__':
     max_percent = 125
     gage_list = ('08329928', '08330000')
-    subscribers = ('jedfrechette@gmail.com', 'jdfrech@unm.edu')
+    subscribers = ('jedfrechette@gmail.com',
+                   'jcoonrod@unm.edu',
+                   'tfw@unm.edu',
+                   'jcstorm@unm.edu')
     subject = '"%s percent of median discharge exceeded."' % max_percent
+    error = ''
     body = []
+    
     for gage in gage_list:
-        date_time, q, site, graph_url = check_gage(gage)
+        try:
+            date_time, q, site, graph_url = check_gage(gage)
+        except:
+            error = '\n'.join([error, 'Unable to get data for gage %s' % gage])
+            continue
+            
         if not q:
             continue
         elif max(q) > (max_percent / 100.0) * median(q):
@@ -96,12 +103,19 @@ if __name__ == '__main__':
             para = wrap('A maximum discharge of %s cfs was first recorded ' \
                         'by station %s at %s. This discharge was %i percent ' \
                         'of the median discharge between ' \
-                        '%s and %s.' % (max(q),
-                                        site, time_max, percent,
+                        '%s and %s.' % (max(q), 
+                                        site, time_max, percent, 
                                         date_time[0], date_time[-1]))
             para.append(graph_url)
             body.append('\n'.join(para))
+            
     if body:
-        mesg = popen('mail -s %s %s' % (subject, ' '.join(subscribers)), 'w')
-        mesg.write('\n\n'.join(body))
-        mesg.close()
+        # Uncomment for debugging or when running on a system without 'mail'.
+#        print body
+        popen('mail -s %s %s' % (subject, ' '.join(subscribers)), 
+              'w').write('\n\n'.join(body))
+    if error:
+        # Uncomment for debugging or when running on a system without 'mail'.
+#        print error
+        popen('mail -s %s %s' % ('check_gage.py error', 
+                                 subscribers[0]), 'w').write(error)
