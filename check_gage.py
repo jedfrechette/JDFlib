@@ -3,7 +3,7 @@
 
 __author__ = 'Jed Frechette <jdfrech@unm.edu>'
 __version__ = '0.1'
-__date__ = '30 July 2007'
+__date__ = '10 August 2007'
 
 from os import popen
 from textwrap import wrap
@@ -76,7 +76,7 @@ def median(m):
         
             
 if __name__ == '__main__':
-    max_percent = 125
+    max_percent = 150
     gage_list = ('08329928', '08330000')
     subscribers = ('jedfrechette@gmail.com',
                    'jcoonrod@unm.edu',
