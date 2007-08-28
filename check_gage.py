@@ -3,7 +3,7 @@
 
 __author__ = 'Jed Frechette <jdfrech@unm.edu>'
 __version__ = '0.1'
-__date__ = '10 August 2007'
+__date__ = '28 August 2007'
 
 from os import popen
 from textwrap import wrap
@@ -117,5 +117,5 @@ if __name__ == '__main__':
     if error:
         # Uncomment for debugging or when running on a system without 'mail'.
 #        print error
-        popen('mail -s %s %s' % ('check_gage.py error', 
+        popen('mail -s %s %s' % ('"check_gage.py error"', 
                                  subscribers[0]), 'w').write(error)
