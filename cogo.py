@@ -16,41 +16,53 @@ logger = logging.getLogger()
 logger.addHandler(logging.StreamHandler(file('cogo.log', 'w')))
 logger.setLevel(logging.DEBUG)
 
-class PositiveInt(Int):
-    def validate(self, object, name, value):
-        info_text = 'an integer >= 0'
-        super(PositiveInt, self).validate(object, name, value)
-        if value >= 0:
-            return value 
-        self.error(object, name, value) 
-    
-class PositiveFloat(Float): 
-    def validate(self, object, name, value):
-        info_text = 'a float >= 0'
-        super(PositiveFloat, self).validate(object, name, value)
-        print value
-        if value >= 0:
-            return value 
-        self.error(object, name, value)
+#class PositiveInt(Int):
+#    def validate(self, object, name, value):
+#        info_text = 'an integer >= 0'
+#        super(PositiveInt, self).validate(object, name, value)
+#        if value >= 0:
+#            return value 
+#        self.error(object, name, value)
+#    
+#class PositiveFloat(Float):
+#    def validate(self, object, name, value):
+#        info_text = 'a float >= 0'
+#        super(PositiveFloat, self).validate(object, name, value)
+#        print value
+#        if value >= 0:
+#            return value 
+#        self.error(object, name, value)
 
 class Angle(HasTraits):
     """An angle in decimal degrees or degrees, minutes seconds."""
-    dd = Float(0.0)
+    decimal_degrees = Float(0.0)
 #    dms = Dict()
-    dms = Dict({'deg': 0, 'min': 0, 'sec': 0})
-    rad = Float()
+    degrees = Int()
+    minutes = Int()
+    seconds = Float()
+    radians = Float()
     
-    def _dd_changed(self):
-        self.rad = self.dd * pi/180
-        self.dms['deg'] = int(self.dd)
-        self.dms['min'] = int(60 * (self.dd - self.dms['deg']))
-        self.dms['sec'] = 60 * (60 * (self.dd - self.dms['deg']) - self.dms['min'])
+    def _decimal_degrees_changed(self):
+        self.radians = self.decimal_degrees * pi/180
+        self.degrees = int(self.decimal_degrees)
+        self.minutes = int(60 * (self.decimal_degrees - self.degrees))
+        self.seconds = 60 * (60 * (self.decimal_degrees- self.degrees)
+                             - self.minutes)
         
-    def _dms_changed(self):
-        self.dd = self.dms['deg'] + self.dms['min']/60.0 + self.dms['sec']/3600
-    
-    def _rad_changed(self):
-        self.dd = self.rad * 180/pi
+#    def _degrees_changed(self):
+#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+#                               + self.seconds/3600
+#    
+#    def _minutes_changed(self):
+#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+#                               + self.seconds/3600
+#
+#    def _seconds_changed(self):
+#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+#                               + self.seconds/3600
+#    
+#    def _radians_changed(self):
+#        self.decimal_degrees = self.radians * 180/pi
 
 class MeasuredPoint(HasTraits):
     """A measurement.
@@ -103,8 +115,10 @@ def rad2deg(angle_radian):
 
 def gui():
     """Run the interactive converter."""
-    point = MeasuredPoint()
-    point.configure_traits()
+    angle = Angle()
+    angle.configure_traits()
+#    point = MeasuredPoint()
+#    point.configure_traits()
     
 if __name__ == "__main__":
     gui()
