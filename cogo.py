@@ -2,7 +2,7 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "5 February 2008"
+__date__ = "6 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
@@ -12,55 +12,65 @@ from enthought.traits.ui.api import View, Item
 from scipy import arctan, cos, pi, sin, sqrt
 import logging
 
-logger = logging.getLogger()
-logger.addHandler(logging.StreamHandler(file('cogo.log', 'w')))
-logger.setLevel(logging.DEBUG)
+class PositiveFloat(Float):
+    def validate(self, object, name, value):
+        info_text = 'a float >= 0'
+        super(SecondFloat, self).validate(object, name, value)
+        if value >= 0:
+            return value 
+        self.error(object, name, value)
+        
+class PositiveInt(Int):
+    def validate(self, object, name, value):
+        info_text = 'an integer >= 0'
+        super(PositiveInt, self).validate(object, name, value)
+        if value >= 0:
+            return value 
+        self.error(object, name, value)
 
-#class PositiveInt(Int):
-#    def validate(self, object, name, value):
-#        info_text = 'an integer >= 0'
-#        super(PositiveInt, self).validate(object, name, value)
-#        if value >= 0:
-#            return value 
-#        self.error(object, name, value)
-#    
-#class PositiveFloat(Float):
-#    def validate(self, object, name, value):
-#        info_text = 'a float >= 0'
-#        super(PositiveFloat, self).validate(object, name, value)
-#        print value
-#        if value >= 0:
-#            return value 
-#        self.error(object, name, value)
+class MinuteInt(Int):
+    def validate(self, object, name, value):
+        info_text = 'an integer >= 0 and < 60'
+        super(PositiveInt, self).validate(object, name, value)
+        if 60 > value >= 0:
+            return value 
+        self.error(object, name, value)
+    
+class SecondFloat(Float):
+    def validate(self, object, name, value):
+        info_text = 'a float >= 0 and < 60'
+        super(SecondFloat, self).validate(object, name, value)
+        if 60 > value >= 0:
+            return value 
+        self.error(object, name, value)
 
 class Angle(HasTraits):
     """An angle in decimal degrees or degrees, minutes seconds."""
-    decimal_degrees = Float(0.0)
-#    dms = Dict()
-    degrees = Int()
-    minutes = Int()
-    seconds = Float()
-    radians = Float()
+    decimal_degrees = PositiveFloat
+    degrees = PositiveInt
+    minutes = MinuteInt
+    seconds = SecondFloat
+    radians = PositiveFloat
     
     def _decimal_degrees_changed(self):
         self.radians = self.decimal_degrees * pi/180
-        self.degrees = int(self.decimal_degrees)
-        self.minutes = int(60 * (self.decimal_degrees - self.degrees))
-        self.seconds = 60 * (60 * (self.decimal_degrees- self.degrees)
-                             - self.minutes)
+#        self.degrees = int(self.decimal_degrees)
+#        self.minutes = int(60 * (self.decimal_degrees - self.degrees))
+#        self.seconds = 60 * (60 * (self.decimal_degrees- self.degrees)
+#                             - self.minutes)
         
-#    def _degrees_changed(self):
-#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
-#                               + self.seconds/3600
-#    
-#    def _minutes_changed(self):
-#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
-#                               + self.seconds/3600
-#
-#    def _seconds_changed(self):
-#        self.decimal_degrees = self.degrees + self.minutes/60.0 \
-#                               + self.seconds/3600
-#    
+    def _degrees_changed(self):
+        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+                               + self.seconds/3600
+    
+    def _minutes_changed(self):
+        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+                               + self.seconds/3600
+
+    def _seconds_changed(self):
+        self.decimal_degrees = self.degrees + self.minutes/60.0 \
+                               + self.seconds/3600
+    
 #    def _radians_changed(self):
 #        self.decimal_degrees = self.radians * 180/pi
 
@@ -115,6 +125,11 @@ def rad2deg(angle_radian):
 
 def gui():
     """Run the interactive converter."""
+    
+    logger = logging.getLogger()
+    logger.addHandler(logging.StreamHandler(file('cogo.log', 'w')))
+    logger.setLevel(logging.DEBUG)
+
     angle = Angle()
     angle.configure_traits()
 #    point = MeasuredPoint()
