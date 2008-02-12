@@ -2,72 +2,61 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "6 February 2008"
+__date__ = "11 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
-from types import IntType, FloatType
-from enthought.traits.api import HasTraits, Button, Float, Dict, Int
+from enthought.traits.api import HasTraits, Button, BaseFloat, BaseInt, \
+    Float
 from enthought.traits.ui.api import View, Item
 from scipy import arctan, ceil, cos, floor, pi, sin, sqrt
 import logging
 
+class DegreeInt(BaseInt):
+    info_text = 'an integer >= 0 and < 360'
+    def validate(self, object, name, value):
+        value = super(DegreeInt, self).validate(object, name, value)
+        if 0 <= value < 360:
+            return value
+        self.error(object, name, value)
+        
+class MinuteInt(BaseInt):
+    info_text = 'an integer >= 0 and < 60'
+    def validate(self, object, name, value):
+        value = super(MinuteInt, self).validate(object, name, value)
+        if 0 <= value < 60:
+            return value
+        self.error(object, name, value)
 
-class Angle(HasTraits):
-    """An angle in decimal degrees or degrees, minutes seconds."""
-    decimal_degrees = Float
-    degrees = Float
-    minutes = Float
-    seconds = Float
-    radians = Float
+class SecondFloat(BaseFloat):
+    info_text = 'a float >= 0 and < 60'
+    def validate(self, object, name, value):
+        value = super(SecondFloat, self).validate(object, name, value)
+        if 0 <= value < 60:
+            return value
+        self.error(object, name, value)
+
+class AngleDMS(HasTraits):
+    """An angle in ddegrees, minutes seconds."""
+    degrees = DegreeInt
+    minutes = MinuteInt
+    seconds = SecondFloat
+    __decimal_degrees = Float
+    __radians = Float
     
     def _dd2rad(self):
         """Convert decimal degrees to radians."""
-        self.radians = self.decimal_degrees * pi/180
-    
-    def _dd2dms(self):
-        """Convert decimal degrees to degrees, minutes, seconds."""
-        self.degrees = floor(self.decimal_degrees)
-        self.minutes = floor(60 * (self.decimal_degrees - self.degrees))
-        self.seconds = 60 * (60 * (self.decimal_degrees - self.degrees)
-                             - self.minutes)
-        
-    def _rad2dd(self):
-        """Convert radians to decimal degrees."""
-        self.decimal_degrees = self.radians * 180/pi
+        self.__radians = self.__decimal_degrees * pi/180
         
     def _dms2dd(self):
         """Convert degrees, minutes, seconds to decimal degrees."""
-        print self.degrees
-        self.decimal_degrees = self.degrees + self.minutes/60 \
-                               + self.seconds/3600
-    def _simplify(self):
-        print self.decimal_degrees
-        if self.decimal_degrees >= 360:
-            n_rotations = -int(self.decimal_degrees / 360)
-            self.decimal_degrees = self.decimal_degrees + 360 * n_rotations
-        elif self.decimal_degrees < 0:
-            if self.decimal_degrees <= -360:
-                n_rotations = -int(self.decimal_degrees / 360)
-                self.decimal_degrees = self.decimal_degrees + 360 * n_rotations
-            else:
-                self.decimal_degrees = self.decimal_degrees + 360
-    
-    def _anytrait_changed(self, name, new):
-        if name == 'decimal_degrees':
-#            self._simplify()
-            self._dd2rad()
-            self._dd2dms()
-        elif name =='radians':
-            self._rad2dd()
-#            self._simplify()
-#            self._dd2rad()
-#            self._dd2dms()
-        elif name in ('degrees', 'minutes', 'seconds'):
+        self.__decimal_degrees = self.degrees + self.minutes/60.0 \
+                                 + self.seconds/3600.0
+            
+    def _anytrait_changed(self, name):
+        if name in ('degrees', 'minutes', 'seconds'):
             self._dms2dd()
-#            self._simplify()
-#            self._dd2dms()
-#            self._dd2rad()
+            self._dd2rad()
 
 
 class MeasuredPoint(HasTraits):
@@ -128,7 +117,7 @@ def gui():
     
 #    from enthought.developer.helper.fbi import bp; bp()
     
-    angle = Angle()
+    angle = AngleDMS()
     angle.configure_traits()
 #    point = MeasuredPoint()
 #    point.configure_traits()
