@@ -2,14 +2,14 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "11 February 2008"
+__date__ = "15 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
 from enthought.traits.api import HasTraits, Button, BaseFloat, BaseInt, \
-    Float
+    Float, Property, cached_property
 from enthought.traits.ui.api import View, Item
-from scipy import arctan, ceil, cos, floor, pi, sin, sqrt
+from scipy import arctan, cos, pi, sin, sqrt
 import logging
 
 class DegreeInt(BaseInt):
@@ -37,27 +37,20 @@ class SecondFloat(BaseFloat):
         self.error(object, name, value)
 
 class AngleDMS(HasTraits):
-    """An angle in ddegrees, minutes seconds."""
+    """An angle in degrees, minutes, and seconds."""
     degrees = DegreeInt
     minutes = MinuteInt
     seconds = SecondFloat
-    __decimal_degrees = Float
-    __radians = Float
+    decimal_degrees = Property(depends_on='degrees, minutes, seconds')
+    radians = Property(depends_on='decimal_degrees')
     
-    def _dd2rad(self):
-        """Convert decimal degrees to radians."""
-        self.__radians = self.__decimal_degrees * pi/180
-        
-    def _dms2dd(self):
-        """Convert degrees, minutes, seconds to decimal degrees."""
-        self.__decimal_degrees = self.degrees + self.minutes/60.0 \
-                                 + self.seconds/3600.0
-            
-    def _anytrait_changed(self, name):
-        if name in ('degrees', 'minutes', 'seconds'):
-            self._dms2dd()
-            self._dd2rad()
-
+    @cached_property 
+    def _get_decimal_degrees(self):
+        return self.degrees + self.minutes/60.0 + self.seconds/3600.0
+    
+    @cached_property
+    def _get_radians(self):
+        return self.decimal_degrees * pi/180
 
 class MeasuredPoint(HasTraits):
     """A measurement.
