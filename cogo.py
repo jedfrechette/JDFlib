@@ -2,13 +2,13 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "15 February 2008"
+__date__ = "16 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
-from enthought.traits.api import HasTraits, Button, BaseFloat, BaseInt, \
-    Float, Property, cached_property
-from enthought.traits.ui.api import View, Item
+from enthought.traits.api import BaseFloat, BaseInt, Button, Float, HasTraits, \
+    Instance, Property, cached_property
+from enthought.traits.ui.api import View, Group, HGroup, Item
 from scipy import arctan, cos, pi, sin, sqrt
 import logging
 
@@ -51,69 +51,96 @@ class AngleDMS(HasTraits):
     @cached_property
     def _get_radians(self):
         return self.decimal_degrees * pi/180
+    
+    view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
-class MeasuredPoint(HasTraits):
-    """A measurement.
+class BaseStation(HasTraits):
+    """A base station that serves as the origin of a survey."""
+    northing = Float
+    easting = Float
+    elevation = Float
+    elevation_offset = Float
     
-    zenith_angle    = Zenith angle.
-    horizontal_angle_right   = Horizontal angle measured clockwise from the rear.
-    slope_distance      = Slope distance."""
-    zenith_angle = Float(90.0)
-    horizontal_angle_right = Float()
-    slope_distance = Float()
+    view = View(Item('northing'),
+                Item('easting'),
+                HGroup(Item('elevation'), Item('elevation_offset')))
     
-    x = Float()
-    y = Float()
-    z = Float()
+class TargetStation(HasTraits):
+    """A target station with coordinates calulated relative to a BaseStation."""
+    base = Instance(BaseStation, kw={'northing': 0,
+                                     'easting': 0,
+                                     'elevation': 0,
+                                     'elevation_offset': 0})
+    zenith_angle = Instance(AngleDMS, kw={'degrees': 90,
+                                          'minutes': 0,
+                                          'seconds': 0})
+    horizontal_angle = Instance(AngleDMS, kw={'degrees': 0,
+                                              'minutes': 0,
+                                              'seconds': 0})
+    horizontal_angle_offset = Instance(AngleDMS, kw={'degrees': 0,
+                                                     'minutes': 0,
+                                                     'seconds': 0})
+    elevation_offset = Float
+    slope_distance = Float
+    horizontal_distance = Property(depends_on='zenith_angle, horizontal_angle, \
+                                               slope_distance')
+    vertical_distance = Property(depends_on='zenith_angle, horizontal_angle, \
+                                             slope_distance')
+    northing = Property(depends_on='base.northing, zenith_angle, \
+                                    horizontal_angle, horizontal_angle_offset,\
+                                    slope_distance, elevation_offset')
+    easting = Property(depends_on='base.easting, zenith_angle, \
+                                   horizontal_angle, horizontal_angle_offset, \
+                                   slope_distance, elevation_offset')
+    elevation = Property(depends_on='base.elevation, base.elevation_offset, \
+                                     zenith_angle, \
+                                     horizontal_angle, horizontal_angle_offset, \
+                                     slope_distance, elevation_offset')
     
-    calculate_xyz = Button()
-    calculate_angles = Button()
+    @cached_property
+    def _get_horizontal_distance(self):
+        return self.slope_distance * sin(self.zenith_angle.radians)
     
-    def _calculate_xyz_fired(self):
-        self.z = self.slope_distance * cos(deg2rad(self.zenith_angle))
-        h_dist = self.slope_distance * sin(deg2rad(self.zenith_angle))
-        self.x = sin(deg2rad(self.horizontal_angle_right)) * h_dist
-        self.y = cos(deg2rad(self.horizontal_angle_right)) * h_dist
+    @cached_property
+    def _get_vertical_distance(self):
+        return self.slope_distance * cos(self.zenith_angle.radians)
     
-    def _calculate_angles_fired(self):
-        h_dist = sqrt(self.x**2 + self.y**2)
-        self.slope_distance = sqrt(h_dist**2 + self.z**2)
-        self.horizontal_angle_right = rad2deg(arctan(self.x / self.y))
-        self.zenith_angle = rad2deg(arctan(h_dist / self.z))
+    @cached_property
+    def _get_northing(self):
+        return self.horizontal_distance * cos(self.horizontal_angle.radians) \
+               + self.base.northing
     
-    view = View('zenith_angle',
-                'horizontal_angle_right',
-                'slope_distance',
-                'x',
-                'y',
-                'z',
-                Item('calculate_xyz', show_label=False),
-                Item('calculate_angles', show_label=False))
-
-class MainWindow(HasTraits):
-    pass
-     
-def deg2rad(angle_degree):
-    """Convert an angle in degrees to radians."""
-    return angle_degree * pi/180
-
-def rad2deg(angle_radian):
-    """Convert an angle in radians to degrees."""
-    return angle_radian * 180/pi
-
+    @cached_property
+    def _get_easting(self):
+        print self.horizontal_distance
+        print self.horizontal_angle.radians
+        return self.horizontal_distance * sin(self.horizontal_angle.radians) \
+               + self.base.easting
+    
+    @cached_property
+    def _get_elevation(self):
+        return self.slope_distance * cos(self.zenith_angle.radians) \
+               + self.base.elevation \
+               + self.base.elevation_offset - self.elevation_offset
+    
+    view = View(Item('base', style='custom'),
+                Group(Item('horizontal_angle', style='custom'),
+                      Item('horizontal_angle_offset', style='custom'),
+                      Item('zenith_angle', style='custom'),
+                      Item('slope_distance'),
+                      label='Shot to target',
+                      show_border=True),
+                Group(Item('elevation_offset'),
+                      HGroup(Item('northing', format_str='%.2f'),
+                             Item('easting', format_str='%.2f'),
+                             Item('elevation', format_str='%.2f'))))
+                      
 def gui():
     """Run the interactive converter."""
-    
-    logger = logging.getLogger()
-    logger.addHandler(logging.StreamHandler(file('cogo.log', 'w')))
-    logger.setLevel(logging.DEBUG)
-    
-#    from enthought.developer.helper.fbi import bp; bp()
-    
-    angle = AngleDMS()
-    angle.configure_traits()
-#    point = MeasuredPoint()
-#    point.configure_traits()
+    import enthought.traits.ui.wx.view_application
+    enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
+    target = TargetStation()
+    target.configure_traits()
     
 if __name__ == "__main__":
     gui()
