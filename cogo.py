@@ -2,13 +2,14 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "16 February 2008"
+__date__ = "19 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
 from enthought.traits.api import BaseFloat, BaseInt, Button, Float, HasTraits, \
     Instance, Property, cached_property
 from enthought.traits.ui.api import View, Group, HGroup, Item
+from enthought.traits.ui.menu import LiveButtons
 from scipy import arctan, cos, pi, sin, sqrt
 import logging
 
@@ -82,20 +83,31 @@ class TargetStation(HasTraits):
                                                      'seconds': 0})
     elevation_offset = Float
     slope_distance = Float
-    horizontal_distance = Property(depends_on='zenith_angle, horizontal_angle, \
+    horizontal_distance = Property(depends_on='zenith_angle.radians, \
+                                               horizontal_angle.radians, \
                                                slope_distance')
-    vertical_distance = Property(depends_on='zenith_angle, horizontal_angle, \
+    vertical_distance = Property(depends_on='zenith_angle.radians, \
+                                             horizontal_angle.radians, \
                                              slope_distance')
-    northing = Property(depends_on='base.northing, zenith_angle, \
-                                    horizontal_angle, horizontal_angle_offset,\
-                                    slope_distance, elevation_offset')
-    easting = Property(depends_on='base.easting, zenith_angle, \
-                                   horizontal_angle, horizontal_angle_offset, \
-                                   slope_distance, elevation_offset')
-    elevation = Property(depends_on='base.elevation, base.elevation_offset, \
-                                     zenith_angle, \
-                                     horizontal_angle, horizontal_angle_offset, \
-                                     slope_distance, elevation_offset')
+    northing = Property(depends_on='base.northing, \
+                                    zenith_angle.radians, \
+                                    horizontal_angle.radians, \
+                                    horizontal_angle_offset.radians,\
+                                    slope_distance, \
+                                    elevation_offset')
+    easting = Property(depends_on='base.easting, \
+                                   zenith_angle.radians, \
+                                   horizontal_angle.radians, \
+                                   horizontal_angle_offset.radians, \
+                                   slope_distance, \
+                                   elevation_offset')
+    elevation = Property(depends_on='base.elevation, \
+                                     base.elevation_offset, \
+                                     zenith_angle.radians, \
+                                     horizontal_angle.radians, \
+                                     horizontal_angle_offset.radians, \
+                                     slope_distance, \
+                                     elevation_offset')
     
     @cached_property
     def _get_horizontal_distance(self):
@@ -107,15 +119,15 @@ class TargetStation(HasTraits):
     
     @cached_property
     def _get_northing(self):
-        return self.horizontal_distance * cos(self.horizontal_angle.radians) \
-               + self.base.northing
+        return cos(self.horizontal_angle.radians
+                   + self.horizontal_angle_offset.radians) \
+               * self.horizontal_distance + self.base.northing
     
     @cached_property
     def _get_easting(self):
-        print self.horizontal_distance
-        print self.horizontal_angle.radians
-        return self.horizontal_distance * sin(self.horizontal_angle.radians) \
-               + self.base.easting
+        return sin(self.horizontal_angle.radians
+                   + self.horizontal_angle_offset.radians) \
+               * self.horizontal_distance + self.base.easting
     
     @cached_property
     def _get_elevation(self):
@@ -131,14 +143,16 @@ class TargetStation(HasTraits):
                       label='Shot to target',
                       show_border=True),
                 Group(Item('elevation_offset'),
-                      HGroup(Item('northing', format_str='%.2f'),
-                             Item('easting', format_str='%.2f'),
-                             Item('elevation', format_str='%.2f'))))
+                      HGroup(Item('northing', format_str='%.3f', springy = True),
+                             Item('easting', format_str='%.3f', springy = True),
+                             Item('elevation', format_str='%.3f', springy = True))),
+                buttons=LiveButtons)
                       
 def gui():
     """Run the interactive converter."""
     import enthought.traits.ui.wx.view_application
     enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
+#    from enthought.developer.helper.fbi import bp; bp()
     target = TargetStation()
     target.configure_traits()
     
