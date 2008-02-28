@@ -2,18 +2,18 @@
 """Perform coordinate geometry calculations."""
 
 __author__ = "Jed Frechette <jdfrech@unm.edu>"
-__date__ = "19 February 2008"
+__date__ = "27 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
-from enthought.traits.api import BaseFloat, BaseInt, Button, Float, HasTraits, \
+from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
     Instance, Property, cached_property
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
-from scipy import arctan, cos, pi, sin, sqrt
-import logging
+from scipy import cos, pi, sin
 
 class DegreeInt(BaseInt):
+    """An integer >= 0 and < 360 representing an angle in degrees."""
     info_text = 'an integer >= 0 and < 360'
     def validate(self, object, name, value):
         value = super(DegreeInt, self).validate(object, name, value)
@@ -22,6 +22,7 @@ class DegreeInt(BaseInt):
         self.error(object, name, value)
         
 class MinuteInt(BaseInt):
+    """An integer >= 0 and < 60 representing an angle in minutes."""
     info_text = 'an integer >= 0 and < 60'
     def validate(self, object, name, value):
         value = super(MinuteInt, self).validate(object, name, value)
@@ -30,6 +31,7 @@ class MinuteInt(BaseInt):
         self.error(object, name, value)
 
 class SecondFloat(BaseFloat):
+    """A float >= 0 and < 60 representing an angle in seconds."""
     info_text = 'a float >= 0 and < 60'
     def validate(self, object, name, value):
         value = super(SecondFloat, self).validate(object, name, value)
@@ -56,7 +58,7 @@ class AngleDMS(HasTraits):
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
 class BaseStation(HasTraits):
-    """A base station that serves as the origin of a survey."""
+    """A station at the origin of a survey."""
     northing = Float
     easting = Float
     elevation = Float
@@ -67,7 +69,7 @@ class BaseStation(HasTraits):
                 HGroup(Item('elevation'), Item('elevation_offset')))
     
 class TargetStation(HasTraits):
-    """A target station with coordinates calulated relative to a BaseStation."""
+    """A station with coordinates calulated relative to a BaseStation."""
     base = Instance(BaseStation, kw={'northing': 0,
                                      'easting': 0,
                                      'elevation': 0,
@@ -143,15 +145,22 @@ class TargetStation(HasTraits):
                       label='Shot to target',
                       show_border=True),
                 Group(Item('elevation_offset'),
-                      HGroup(Item('northing', format_str='%.3f', springy = True),
-                             Item('easting', format_str='%.3f', springy = True),
-                             Item('elevation', format_str='%.3f', springy = True))),
+                      HGroup(Item('northing',
+                                  format_str='%.3f',
+                                  springy = True),
+                             Item('easting',
+                                  format_str='%.3f',
+                                  springy = True),
+                             Item('elevation',
+                                  format_str='%.3f',
+                                  springy = True))),
                 buttons=LiveButtons)
                       
 def gui():
     """Run the interactive converter."""
     import enthought.traits.ui.wx.view_application
     enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
+#    Uncomment the next line to start interactive debugger.
 #    from enthought.developer.helper.fbi import bp; bp()
     target = TargetStation()
     target.configure_traits()
