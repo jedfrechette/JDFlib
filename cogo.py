@@ -158,8 +158,8 @@ class TargetStation(HasTraits):
                       
 def gui():
     """Run the interactive converter."""
-    import enthought.traits.ui.wx.view_application
-    enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
+#    import enthought.traits.ui.wx.view_application
+#    enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
 #    Uncomment the next line to start interactive debugger.
 #    from enthought.developer.helper.fbi import bp; bp()
     target = TargetStation()
