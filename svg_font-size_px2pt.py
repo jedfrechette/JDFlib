@@ -1,4 +1,16 @@
 #!/usr/bin/env python
+
+#------------------------------------------------------------------------------
+#
+# Copyright (C) 2007 Jed Frechette <jedfrechette@gmail.com>
+#
+# This software is provided without warranty under the terms of the MIT
+# license available online at http://opensource.org/licenses/mit-license.php
+# and may be redistributed only under the conditions described in the
+# aforementioned license.
+#
+#------------------------------------------------------------------------------
+
 """Change font-size units in an SVG file for pixels to points.
 
 WARNING: This script has not been thoroughly tested and will overwrite your
@@ -9,27 +21,12 @@ This script does not actually convert the font-sizes it simply changes the
 unit suffix from px to pt. When the file is then loaded into Inkscape all
 font-sizes will be converted back to pixels and scaled assuming a 90 dpi
 pixel density. For example 10 pt text will be converted to 12.5 px text.
-
-Copyright (C) 2007 Jed Frechette <jedfrechette@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 """
 
 __author__ = "Jed Frechette <jedfrechette@gmail.com>"
 __date__ = "14 March 2007"
 __version__ = 0.1
+__license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
 
 from glob import glob
@@ -50,18 +47,25 @@ def walk(parent):
                 node.attributes['style'].value = ';'.join(value_list)
             walk(node)
        
-if __name__ == '__main__':
+def get_file_list():
+    """Return a list of files specified on the command line."""
     parser = OptionParser(usage='%prog INPUT_FILES', 
                           description=' '.join(__doc__.split()), 
                           version=__version__)
     (opts, args) = parser.parse_args()
     if name == 'nt':
         args = glob(args[0])
-        
-    for input_name in args:
-        doc = minidom.parse(input_name)
+    return args
+
+def process_files(file_list):
+    """Process each file named in the input list."""
+    for file_name in file_list:
+        doc = minidom.parse(file_name)
         walk(doc.documentElement)
         
-        output_file = codecs.open(input_name, 'w', 'utf-8')
+        output_file = codecs.open(file_name, 'w', 'utf-8')
         doc.writexml(output_file)
         output_file.close()
+
+if __name__ == '__main__':
+    process_files(get_file_list())
