@@ -6,11 +6,16 @@ __date__ = "27 February 2008"
 __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
+# Standard library imports.
+import csv
+
+# Enthought library imports.
 from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
-    Instance, Property, cached_property
+    Instance, Property, cached_property, String
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
-from scipy import cos, pi, sin
+
+from scipy import cos, sin, pi, mean, floor
 
 class DegreeInt(BaseInt):
     """An integer >= 0 and < 360 representing an angle in degrees."""
@@ -59,6 +64,7 @@ class AngleDMS(HasTraits):
 
 class BaseStation(HasTraits):
     """A station at the origin of a survey."""
+    id = String
     northing = Float
     easting = Float
     elevation = Float
@@ -70,6 +76,7 @@ class BaseStation(HasTraits):
     
 class TargetStation(HasTraits):
     """A station with coordinates calulated relative to a BaseStation."""
+    id = String
     base = Instance(BaseStation, kw={'northing': 0,
                                      'easting': 0,
                                      'elevation': 0,
@@ -165,5 +172,116 @@ def gui():
     target = TargetStation()
     target.configure_traits()
     
+def load_measurements(filename):
+    """Load survey measurements from a text file."""
+    try:
+        reader = csv.reader(open(filename, 'rb'),
+                            delimiter=' ',
+                            skipinitialspace=True)
+        target_list = []
+        base = BaseStation()
+        for n_row, row in enumerate(reader):
+            if row[0][0] == '#':
+                continue
+            if n_row == 1:
+                base.id = row[0]
+                base.easting = float(row[1])
+                base.northing = float(row[2])
+                base.elevation = float(row[3])
+                base.elevation_offset = float(row[4])
+                HAR_offset = parse_angle(row[5])
+                
+            else:
+                target = TargetStation()
+                target.base = base
+                target.horizontal_angle_offset = HAR_offset
+                target.id = row[0]
+                target.horizontal_angle = avg_HAR(parse_angle(row[1]),
+                                                  parse_angle(row[4]))
+                target.zenith_angle = avg_ZAR(parse_angle(row[2]),
+                                              parse_angle(row[5]))
+                target.slope_distance = mean([float(row[3]), float(row[6])])
+                target.elevation_offset = float(row[7])
+                target_list.append(target)
+    except:
+        print "Processing file %s failed." % filename
+        raise
+    
+    return base, target_list
+
+def save_coordinates(base, target_list, out_filename):
+    """Save the coordinates of a base station and a list of target stations to
+    a text file."""
+    writer = csv.writer(open(out_filename, 'wb'), delimiter=' ')
+    writer.writerow(['#id',
+                     'easting',
+                     'northing',
+                     'elevation'])
+    writer.writerow([base.id,
+                     base.easting,
+                     base.northing,
+                     base.elevation])
+    for target in target_list:
+        writer.writerow([target.id,
+                         target.easting,
+                         target.northing,
+                         target.elevation])
+    
+def parse_angle(angle_string):
+    """ Parse a string with the format: degrees:minutes:seconds and return
+    an instance of AngleDMS. """
+    angle_dms = AngleDMS()
+    angle_dms.degrees = int(angle_string.split(':')[0])
+    angle_dms.minutes = int(angle_string.split(':')[1])
+    angle_dms.seconds = float(angle_string.split(':')[2])
+    return angle_dms
+
+def avg_HAR(direct_HAR, reverse_HAR):
+    """ Average direct and reverse HAR measurements and return an instance of
+    AngleDMS. """
+    avg_dd = mean([reverse_HAR.decimal_degrees - 180,
+                   direct_HAR.decimal_degrees])
+    if avg_dd < 0:
+        avg_dd = 360 + avg_dd
+    return dd2dms(avg_dd)
+
+def avg_ZAR(direct_ZAR, reverse_ZAR):
+    """ Average direct and reverse ZAR measurements and return an instance of
+    AngleDMS. """
+    avg_dd = mean([180 - (reverse_ZAR.decimal_degrees - 180),
+                   direct_ZAR.decimal_degrees])
+    if avg_dd < 0:
+        avg_dd = 360 + avg_dd
+    return dd2dms(avg_dd)
+
+def dd2dms(angle_dd):
+    """ Convert an angle in decimal degrees to an instance of AngleDMS. """
+    angle_dms = AngleDMS()
+    angle_dms.degrees = int(angle_dd)
+    angle_dms.minutes = int(60 * (angle_dd - angle_dms.degrees))
+    angle_dms.seconds = 60 * (60 * (angle_dd - angle_dms.degrees) - angle_dms.minutes)
+    return angle_dms
+
+def get_filenames():
+    """Return a list of filenames to process."""
+    from optparse import OptionParser
+    from glob import glob
+    from os import name
+    
+    parser = OptionParser(usage='%prog INPUT_FILES',
+                          description=' '.join(__doc__.split()),
+                          version=__version__)
+    (opts, args) = parser.parse_args()
+    if name == 'nt':
+        args = glob(args[0])
+    return args
+
 if __name__ == "__main__":
-    gui()
+    FILENAMES = get_filenames()
+    if FILENAMES:
+        for in_filename in FILENAMES:
+            OUT_FILENAME = '_'.join(['coordinates', in_filename])
+            BASE, TARGETS = load_measurements(in_filename)
+            save_coordinates(BASE, TARGETS, OUT_FILENAME)
+    else:
+        gui()
