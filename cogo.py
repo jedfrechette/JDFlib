@@ -70,8 +70,8 @@ class BaseStation(HasTraits):
     elevation = Float
     elevation_offset = Float
     
-    view = View(Item('northing'),
-                Item('easting'),
+    view = View(Item('easting'),
+                Item('northing'),
                 HGroup(Item('elevation'), Item('elevation_offset')))
     
 class TargetStation(HasTraits):
@@ -152,10 +152,10 @@ class TargetStation(HasTraits):
                       label='Shot to target',
                       show_border=True),
                 Group(Item('elevation_offset'),
-                      HGroup(Item('northing',
+                      HGroup(Item('easting',
                                   format_str='%.3f',
                                   springy = True),
-                             Item('easting',
+                             Item('northing',
                                   format_str='%.3f',
                                   springy = True),
                              Item('elevation',
