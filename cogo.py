@@ -239,19 +239,18 @@ def parse_angle(angle_string):
 def avg_HAR(direct_HAR, reverse_HAR):
     """ Average direct and reverse HAR measurements and return an instance of
     AngleDMS. """
-    avg_dd = mean([reverse_HAR.decimal_degrees - 180,
-                   direct_HAR.decimal_degrees])
-    if avg_dd < 0:
-        avg_dd = 360 + avg_dd
+    reverse = reverse_HAR.decimal_degrees + 180
+    if reverse >= 360:
+        reverse -= 360
+    avg_dd = mean([reverse, direct_HAR.decimal_degrees])
     return dd2dms(avg_dd)
 
 def avg_ZAR(direct_ZAR, reverse_ZAR):
     """ Average direct and reverse ZAR measurements and return an instance of
     AngleDMS. """
-    avg_dd = mean([180 - (reverse_ZAR.decimal_degrees - 180),
+    reverse = 360 -reverse_ZAR.decimal_degrees
+    avg_dd = mean([reverse,
                    direct_ZAR.decimal_degrees])
-    if avg_dd < 0:
-        avg_dd = 360 + avg_dd
     return dd2dms(avg_dd)
 
 def dd2dms(angle_dd):
