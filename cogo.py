@@ -15,7 +15,7 @@ from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
 
-from numpy import cos, floor, mean, radians, sin
+from numpy import abs, cos, floor, mean, radians, sin
 
 class DegreeInt(BaseInt):
     """An integer >= 0 and < 360 representing an angle in degrees."""
@@ -205,10 +205,14 @@ def load_measurements(filename):
                 obs.base = base
                 obs.id = row[0]
                 obs.horizontal_angle = avg_HAR(parse_angle(row[1]),
-                                               parse_angle(row[4]))
-                obs.zenith_angle = avg_ZAR(parse_angle(row[2]),
-                                           parse_angle(row[5]))
-                obs.slope_distance = mean([float(row[3]), float(row[6])])
+                                               parse_angle(row[4]),
+                                               obs.id)
+                obs.zenith_angle = avg_ZA(parse_angle(row[2]),
+                                          parse_angle(row[5]),
+                                          obs.id)
+                obs.slope_distance = avg_slope_distance(float(row[3]),
+                                                        float(row[6]),
+                                                        obs.id)
                 obs.z_offset = float(row[7])
                 obs_list.append(obs)
     except:
@@ -235,22 +239,59 @@ def parse_angle(angle_string):
     angle_dms.seconds = float(angle_string.split(':')[2])
     return angle_dms
 
-def avg_HAR(direct_HAR, reverse_HAR):
-    """ Average direct and reverse HAR measurements and return an instance of
-    AngleDMS. """
+def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
+    """ Average direct and reverse horizontal angle right observations and
+    return an instance of AngleDMS. Print a warning if the difference between
+    the observations exceeds the given tolerance. The tolerance is specified in
+    arcseconds"""
     reverse = reverse_HAR.decimal_degrees + 180
     if reverse >= 360:
         reverse -= 360
+        
+    diff = dd2dms(abs(direct_HAR.decimal_degrees - reverse))
+    d, m, s = tol.split(':')
+    angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
+    if diff.decimal_degrees > angle_tol.decimal_degrees:
+        print u'WARNING: Horizontal angle tolerance (%i\u00B0%i\'%.4f") exceeded.' \
+               % (angle_tol.degrees, angle_tol.minutes, angle_tol.seconds)
+        print u'%s HAR difference: %i\u00B0%i\'%.4f"\n' % (observation_id,
+                                                     diff.degrees,
+                                                     diff.minutes,
+                                                     diff.seconds)
     avg_dd = mean([reverse, direct_HAR.decimal_degrees])
     return dd2dms(avg_dd)
 
-def avg_ZAR(direct_ZAR, reverse_ZAR):
-    """ Average direct and reverse ZAR measurements and return an instance of
-    AngleDMS. """
-    reverse = 360 -reverse_ZAR.decimal_degrees
+def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
+    """ Average direct and reverse zenith angle observations and return an
+    instance of AngleDMS. Print a warning if the difference between the
+    observations exceeds the given tolerance. The tolerance is specified in
+    degrees:minutes:seconds"""
+    reverse = 360 - reverse_ZA.decimal_degrees
+    
+    diff = dd2dms(abs(direct_ZA.decimal_degrees - reverse))
+    d, m, s = tol.split(':')
+    angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
+    if diff.decimal_degrees > angle_tol.decimal_degrees:
+        print u'WARNING: Zenith angle tolerance (%i\u00B0%i\'%.4f") exceeded.' \
+               % (angle_tol.degrees, angle_tol.minutes, angle_tol.seconds)
+        print u'%s ZA difference: %i\u00B0%i\'%.4f"\n' % (observation_id,
+                                                     diff.degrees,
+                                                     diff.minutes,
+                                                     diff.seconds)
     avg_dd = mean([reverse,
-                   direct_ZAR.decimal_degrees])
+                   direct_ZA.decimal_degrees])
     return dd2dms(avg_dd)
+
+def avg_slope_distance(direct_slope_distance, reverse_slope_distance,
+                       observation_id='', tol=0.02):
+    """Average direct and reverse slope distance observations and return a
+    float. Print a warning if the difference between the observations exceeds
+    the given tolerance."""
+    diff = abs(direct_slope_distance - reverse_slope_distance)
+    if diff > tol:
+        print 'WARNING: Slope distance tolerance (%.4f) exceeded.' % tol
+        print '%s S difference: %.4f\n' % (observation_id, diff)
+    return mean([direct_slope_distance, reverse_slope_distance])
 
 def dd2dms(angle_dd):
     """ Convert an angle in decimal degrees to an instance of AngleDMS. """
