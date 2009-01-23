@@ -15,7 +15,7 @@ from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
 
-from scipy import cos, sin, pi, mean, floor
+from numpy import cos, floor, mean, radians, sin
 
 class DegreeInt(BaseInt):
     """An integer >= 0 and < 360 representing an angle in degrees."""
@@ -58,7 +58,7 @@ class AngleDMS(HasTraits):
     
     @cached_property
     def _get_radians(self):
-        return self.decimal_degrees * pi/180
+        return radians(self.decimal_degrees)
     
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
