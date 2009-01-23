@@ -249,6 +249,8 @@ def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
         reverse -= 360
         
     diff = dd2dms(abs(direct_HAR.decimal_degrees - reverse))
+    if diff.decimal_degrees > 180:
+        diff = dd2dms(360 - diff.decimal_degrees)
     d, m, s = tol.split(':')
     angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
     if diff.decimal_degrees > angle_tol.decimal_degrees:
