@@ -69,10 +69,13 @@ class BaseStation(HasTraits):
     x = Float
     z = Float
     z_offset = Float
-    
+    horizontal_angle_offset = Instance(AngleDMS, kw={'degrees': 0,
+                                                     'minutes': 0,
+                                                     'seconds': 0})
     view = View(Item('x'),
                 Item('y'),
-                HGroup(Item('z'), Item('z_offset')))
+                HGroup(Item('z'), Item('z_offset')),
+                Item('horizontal_angle_offset', style='custom'))
     
 class TargetStation(HasTraits):
     """A station with coordinates calulated relative to a BaseStation."""
@@ -87,9 +90,6 @@ class TargetStation(HasTraits):
     horizontal_angle = Instance(AngleDMS, kw={'degrees': 0,
                                               'minutes': 0,
                                               'seconds': 0})
-    horizontal_angle_offset = Instance(AngleDMS, kw={'degrees': 0,
-                                                     'minutes': 0,
-                                                     'seconds': 0})
     z_offset = Float
     slope_distance = Float
     horizontal_distance = Property(depends_on='zenith_angle.radians, \
@@ -99,22 +99,22 @@ class TargetStation(HasTraits):
                                              horizontal_angle.radians, \
                                              slope_distance')
     y = Property(depends_on='base.y, \
+                             base.horizontal_angle_offset.radians,\
                              zenith_angle.radians, \
                              horizontal_angle.radians, \
-                             horizontal_angle_offset.radians,\
                              slope_distance, \
                              z_offset')
     x = Property(depends_on='base.x, \
+                             base.horizontal_angle_offset.radians,\
                              zenith_angle.radians, \
                              horizontal_angle.radians, \
-                             horizontal_angle_offset.radians, \
                              slope_distance, \
                              z_offset')
     z = Property(depends_on='base.z, \
                              base.z_offset, \
+                             base.horizontal_angle_offset.radians,\
                              zenith_angle.radians, \
                              horizontal_angle.radians, \
-                             horizontal_angle_offset.radians, \
                              slope_distance, \
                              z_offset')
     
@@ -129,13 +129,13 @@ class TargetStation(HasTraits):
     @cached_property
     def _get_y(self):
         return cos(self.horizontal_angle.radians
-                   + self.horizontal_angle_offset.radians) \
+                   + self.base.horizontal_angle_offset.radians) \
                * self.horizontal_distance + self.base.y
     
     @cached_property
     def _get_x(self):
         return sin(self.horizontal_angle.radians
-                   + self.horizontal_angle_offset.radians) \
+                   + self.base.horizontal_angle_offset.radians) \
                * self.horizontal_distance + self.base.x
     
     @cached_property
@@ -146,7 +146,6 @@ class TargetStation(HasTraits):
     
     view = View(Item('base', style='custom'),
                 Group(Item('horizontal_angle', style='custom'),
-                      Item('horizontal_angle_offset', style='custom'),
                       Item('zenith_angle', style='custom'),
                       Item('slope_distance'),
                       label='Shot to target',
@@ -189,12 +188,11 @@ def load_measurements(filename):
                 base.y = float(row[2])
                 base.z = float(row[3])
                 base.z_offset = float(row[4])
-                HAR_offset = parse_angle(row[5])
+                base.horizontal_angle_offset = parse_angle(row[5])
                 
             else:
                 target = TargetStation()
                 target.base = base
-                target.horizontal_angle_offset = HAR_offset
                 target.id = row[0]
                 target.horizontal_angle = avg_HAR(parse_angle(row[1]),
                                                   parse_angle(row[4]))
