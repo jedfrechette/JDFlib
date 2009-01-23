@@ -62,8 +62,8 @@ class AngleDMS(HasTraits):
     
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
-class BaseStation(HasTraits):
-    """A station at the origin of a survey."""
+class BaseSetup(HasTraits):
+    """Base station setup at the origin of a survey."""
     id = String
     y = Float
     x = Float
@@ -77,13 +77,14 @@ class BaseStation(HasTraits):
                 HGroup(Item('z'), Item('z_offset')),
                 Item('horizontal_angle_offset', style='custom'))
     
-class TargetStation(HasTraits):
-    """A station with coordinates calulated relative to a BaseStation."""
+class Observation(HasTraits):
+    """Observation of horizontal angle, zenith angle, and slope distance
+       collected at a BaseSetup."""
     id = String
-    base = Instance(BaseStation, kw={'x': 0,
-                                     'y': 0,
-                                     'z': 0,
-                                     'z_offset': 0})
+    base = Instance(BaseSetup, kw={'x': 0,
+                                   'y': 0,
+                                   'z': 0,
+                                   'z_offset': 0})
     zenith_angle = Instance(AngleDMS, kw={'degrees': 90,
                                           'minutes': 0,
                                           'seconds': 0})
@@ -148,7 +149,7 @@ class TargetStation(HasTraits):
                 Group(Item('horizontal_angle', style='custom'),
                       Item('zenith_angle', style='custom'),
                       Item('slope_distance'),
-                      label='Shot to target',
+                      label='Observation',
                       show_border=True),
                 Group(Item('z_offset'),
                       HGroup(Item('x',
@@ -168,8 +169,8 @@ def gui():
 #    enthought.traits.ui.wx.view_application.redirect_filename = 'cogo_wx.log'
 #    Uncomment the next line to start interactive debugger.
 #    from enthought.developer.helper.fbi import bp; bp()
-    target = TargetStation()
-    target.configure_traits()
+    obs = Observation()
+    obs.configure_traits()
     
 def load_measurements(filename):
     """Load survey measurements from a text file."""
@@ -177,8 +178,8 @@ def load_measurements(filename):
         reader = csv.reader(open(filename, 'rb'),
                             delimiter=' ',
                             skipinitialspace=True)
-        target_list = []
-        base = BaseStation()
+        obs_list = []
+        base = BaseSetup()
         for n_row, row in enumerate(reader):
             if row[0][0] == '#':
                 continue
@@ -191,30 +192,30 @@ def load_measurements(filename):
                 base.horizontal_angle_offset = parse_angle(row[5])
                 
             else:
-                target = TargetStation()
-                target.base = base
-                target.id = row[0]
-                target.horizontal_angle = avg_HAR(parse_angle(row[1]),
-                                                  parse_angle(row[4]))
-                target.zenith_angle = avg_ZAR(parse_angle(row[2]),
-                                              parse_angle(row[5]))
-                target.slope_distance = mean([float(row[3]), float(row[6])])
-                target.z_offset = float(row[7])
-                target_list.append(target)
+                obs = Observation()
+                obs.base = base
+                obs.id = row[0]
+                obs.horizontal_angle = avg_HAR(parse_angle(row[1]),
+                                               parse_angle(row[4]))
+                obs.zenith_angle = avg_ZAR(parse_angle(row[2]),
+                                           parse_angle(row[5]))
+                obs.slope_distance = mean([float(row[3]), float(row[6])])
+                obs.z_offset = float(row[7])
+                obs_list.append(obs)
     except:
         print "Processing file %s failed." % filename
         raise
     
-    return base, target_list
+    return base, obs_list
 
-def save_coordinates(base, target_list, out_filename):
-    """Save the coordinates of a base station and a list of target stations to
-    a text file."""
+def save_coordinates(base, obs_list, out_filename):
+    """Save the coordinates of a base station and a list of reduced target
+    coordinates to a text file."""
     writer = csv.writer(open(out_filename, 'wb'), delimiter=' ')
     writer.writerow(['#id', 'x', 'y', 'z'])
     writer.writerow([base.id, base.x, base.y, base.z])
-    for target in target_list:
-        writer.writerow([target.id, target.x, target.y, target.z])
+    for obs in obs_list:
+        writer.writerow([obs.id, obs.x, obs.y, obs.z])
     
 def parse_angle(angle_string):
     """ Parse a string with the format: degrees:minutes:seconds and return
@@ -269,7 +270,7 @@ if __name__ == "__main__":
     if FILENAMES:
         for in_filename in FILENAMES:
             OUT_FILENAME = '_'.join(['coordinates', in_filename])
-            BASE, TARGETS = load_measurements(in_filename)
-            save_coordinates(BASE, TARGETS, OUT_FILENAME)
+            BASE, OBSERVATIONS = load_measurements(in_filename)
+            save_coordinates(BASE, OBSERVATIONS, OUT_FILENAME)
     else:
         gui()
