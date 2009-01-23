@@ -65,22 +65,22 @@ class AngleDMS(HasTraits):
 class BaseStation(HasTraits):
     """A station at the origin of a survey."""
     id = String
-    northing = Float
-    easting = Float
-    elevation = Float
-    elevation_offset = Float
+    y = Float
+    x = Float
+    z = Float
+    z_offset = Float
     
-    view = View(Item('easting'),
-                Item('northing'),
-                HGroup(Item('elevation'), Item('elevation_offset')))
+    view = View(Item('x'),
+                Item('y'),
+                HGroup(Item('z'), Item('z_offset')))
     
 class TargetStation(HasTraits):
     """A station with coordinates calulated relative to a BaseStation."""
     id = String
-    base = Instance(BaseStation, kw={'northing': 0,
-                                     'easting': 0,
-                                     'elevation': 0,
-                                     'elevation_offset': 0})
+    base = Instance(BaseStation, kw={'x': 0,
+                                     'y': 0,
+                                     'z': 0,
+                                     'z_offset': 0})
     zenith_angle = Instance(AngleDMS, kw={'degrees': 90,
                                           'minutes': 0,
                                           'seconds': 0})
@@ -90,7 +90,7 @@ class TargetStation(HasTraits):
     horizontal_angle_offset = Instance(AngleDMS, kw={'degrees': 0,
                                                      'minutes': 0,
                                                      'seconds': 0})
-    elevation_offset = Float
+    z_offset = Float
     slope_distance = Float
     horizontal_distance = Property(depends_on='zenith_angle.radians, \
                                                horizontal_angle.radians, \
@@ -98,25 +98,25 @@ class TargetStation(HasTraits):
     vertical_distance = Property(depends_on='zenith_angle.radians, \
                                              horizontal_angle.radians, \
                                              slope_distance')
-    northing = Property(depends_on='base.northing, \
-                                    zenith_angle.radians, \
-                                    horizontal_angle.radians, \
-                                    horizontal_angle_offset.radians,\
-                                    slope_distance, \
-                                    elevation_offset')
-    easting = Property(depends_on='base.easting, \
-                                   zenith_angle.radians, \
-                                   horizontal_angle.radians, \
-                                   horizontal_angle_offset.radians, \
-                                   slope_distance, \
-                                   elevation_offset')
-    elevation = Property(depends_on='base.elevation, \
-                                     base.elevation_offset, \
-                                     zenith_angle.radians, \
-                                     horizontal_angle.radians, \
-                                     horizontal_angle_offset.radians, \
-                                     slope_distance, \
-                                     elevation_offset')
+    y = Property(depends_on='base.y, \
+                             zenith_angle.radians, \
+                             horizontal_angle.radians, \
+                             horizontal_angle_offset.radians,\
+                             slope_distance, \
+                             z_offset')
+    x = Property(depends_on='base.x, \
+                             zenith_angle.radians, \
+                             horizontal_angle.radians, \
+                             horizontal_angle_offset.radians, \
+                             slope_distance, \
+                             z_offset')
+    z = Property(depends_on='base.z, \
+                             base.z_offset, \
+                             zenith_angle.radians, \
+                             horizontal_angle.radians, \
+                             horizontal_angle_offset.radians, \
+                             slope_distance, \
+                             z_offset')
     
     @cached_property
     def _get_horizontal_distance(self):
@@ -127,22 +127,22 @@ class TargetStation(HasTraits):
         return self.slope_distance * cos(self.zenith_angle.radians)
     
     @cached_property
-    def _get_northing(self):
+    def _get_y(self):
         return cos(self.horizontal_angle.radians
                    + self.horizontal_angle_offset.radians) \
-               * self.horizontal_distance + self.base.northing
+               * self.horizontal_distance + self.base.y
     
     @cached_property
-    def _get_easting(self):
+    def _get_x(self):
         return sin(self.horizontal_angle.radians
                    + self.horizontal_angle_offset.radians) \
-               * self.horizontal_distance + self.base.easting
+               * self.horizontal_distance + self.base.x
     
     @cached_property
-    def _get_elevation(self):
+    def _get_z(self):
         return self.slope_distance * cos(self.zenith_angle.radians) \
-               + self.base.elevation \
-               + self.base.elevation_offset - self.elevation_offset
+               + self.base.z \
+               + self.base.z_offset - self.z_offset
     
     view = View(Item('base', style='custom'),
                 Group(Item('horizontal_angle', style='custom'),
@@ -151,14 +151,14 @@ class TargetStation(HasTraits):
                       Item('slope_distance'),
                       label='Shot to target',
                       show_border=True),
-                Group(Item('elevation_offset'),
-                      HGroup(Item('easting',
+                Group(Item('z_offset'),
+                      HGroup(Item('x',
                                   format_str='%.3f',
                                   springy = True),
-                             Item('northing',
+                             Item('y',
                                   format_str='%.3f',
                                   springy = True),
-                             Item('elevation',
+                             Item('z',
                                   format_str='%.3f',
                                   springy = True))),
                 buttons=LiveButtons)
@@ -185,10 +185,10 @@ def load_measurements(filename):
                 continue
             if n_row == 1:
                 base.id = row[0]
-                base.easting = float(row[1])
-                base.northing = float(row[2])
-                base.elevation = float(row[3])
-                base.elevation_offset = float(row[4])
+                base.x = float(row[1])
+                base.y = float(row[2])
+                base.z = float(row[3])
+                base.z_offset = float(row[4])
                 HAR_offset = parse_angle(row[5])
                 
             else:
@@ -201,7 +201,7 @@ def load_measurements(filename):
                 target.zenith_angle = avg_ZAR(parse_angle(row[2]),
                                               parse_angle(row[5]))
                 target.slope_distance = mean([float(row[3]), float(row[6])])
-                target.elevation_offset = float(row[7])
+                target.z_offset = float(row[7])
                 target_list.append(target)
     except:
         print "Processing file %s failed." % filename
@@ -213,19 +213,10 @@ def save_coordinates(base, target_list, out_filename):
     """Save the coordinates of a base station and a list of target stations to
     a text file."""
     writer = csv.writer(open(out_filename, 'wb'), delimiter=' ')
-    writer.writerow(['#id',
-                     'easting',
-                     'northing',
-                     'elevation'])
-    writer.writerow([base.id,
-                     base.easting,
-                     base.northing,
-                     base.elevation])
+    writer.writerow(['#id', 'x', 'y', 'z'])
+    writer.writerow([base.id, base.x, base.y, base.z])
     for target in target_list:
-        writer.writerow([target.id,
-                         target.easting,
-                         target.northing,
-                         target.elevation])
+        writer.writerow([target.id, target.x, target.y, target.z])
     
 def parse_angle(angle_string):
     """ Parse a string with the format: degrees:minutes:seconds and return
