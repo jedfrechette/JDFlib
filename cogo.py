@@ -65,17 +65,24 @@ class AngleDMS(HasTraits):
 class BaseSetup(HasTraits):
     """Base station setup at the origin of a survey."""
     id = String
-    y = Float
     x = Float
+    y = Float
     z = Float
     z_offset = Float
     horizontal_angle_offset = Instance(AngleDMS, kw={'degrees': 0,
                                                      'minutes': 0,
                                                      'seconds': 0})
-    view = View(Item('x'),
-                Item('y'),
-                HGroup(Item('z'), Item('z_offset')),
-                Item('horizontal_angle_offset', style='custom'))
+    view = View(Group(HGroup(Item('x',
+                                  springy = True),
+                            Item('y',
+                                 springy = True),
+                            Item('z',
+                                 springy = True)),
+                      HGroup(Item('z_offset')),
+                      Item('horizontal_angle_offset', style='custom'),
+                      label='Base station setup',
+                      show_border=True)
+    )
     
 class Observation(HasTraits):
     """Observation of horizontal angle, zenith angle, and slope distance
@@ -99,13 +106,13 @@ class Observation(HasTraits):
     vertical_distance = Property(depends_on='zenith_angle.radians, \
                                              horizontal_angle.radians, \
                                              slope_distance')
-    y = Property(depends_on='base.y, \
+    x = Property(depends_on='base.x, \
                              base.horizontal_angle_offset.radians,\
                              zenith_angle.radians, \
                              horizontal_angle.radians, \
                              slope_distance, \
                              z_offset')
-    x = Property(depends_on='base.x, \
+    y = Property(depends_on='base.y, \
                              base.horizontal_angle_offset.radians,\
                              zenith_angle.radians, \
                              horizontal_angle.radians, \
@@ -128,39 +135,41 @@ class Observation(HasTraits):
         return self.slope_distance * cos(self.zenith_angle.radians)
     
     @cached_property
+    def _get_x(self):
+        return sin(self.horizontal_angle.radians
+                   + self.base.horizontal_angle_offset.radians) \
+               * self.horizontal_distance + self.base.x  
+        
+    @cached_property
     def _get_y(self):
         return cos(self.horizontal_angle.radians
                    + self.base.horizontal_angle_offset.radians) \
                * self.horizontal_distance + self.base.y
-    
-    @cached_property
-    def _get_x(self):
-        return sin(self.horizontal_angle.radians
-                   + self.base.horizontal_angle_offset.radians) \
-               * self.horizontal_distance + self.base.x
-    
+               
     @cached_property
     def _get_z(self):
         return self.slope_distance * cos(self.zenith_angle.radians) \
                + self.base.z \
                + self.base.z_offset - self.z_offset
     
-    view = View(Item('base', style='custom'),
+    view = View(Item('base', style='custom', show_label=False),
                 Group(Item('horizontal_angle', style='custom'),
                       Item('zenith_angle', style='custom'),
                       Item('slope_distance'),
+                      Item('z_offset'),
                       label='Observation',
                       show_border=True),
-                Group(Item('z_offset'),
-                      HGroup(Item('x',
-                                  format_str='%.3f',
-                                  springy = True),
-                             Item('y',
-                                  format_str='%.3f',
-                                  springy = True),
-                             Item('z',
-                                  format_str='%.3f',
-                                  springy = True))),
+                HGroup(Item('x',
+                            format_str='%.3f',
+                            springy = True),
+                       Item('y',
+                            format_str='%.3f',
+                            springy = True),
+                       Item('z',
+                            format_str='%.3f',
+                            springy = True),
+                       label='Reduced coordinates',
+                       show_border=True),
                 buttons=LiveButtons)
                       
 def gui():
