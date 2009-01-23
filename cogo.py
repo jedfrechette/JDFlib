@@ -283,7 +283,7 @@ def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
     return dd2dms(avg_dd)
 
 def avg_slope_distance(direct_slope_distance, reverse_slope_distance,
-                       observation_id='', tol=0.02):
+                       observation_id='', tol=0.01):
     """Average direct and reverse slope distance observations and return a
     float. Print a warning if the difference between the observations exceeds
     the given tolerance."""
