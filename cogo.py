@@ -15,7 +15,9 @@ from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
 
-from numpy import abs, cos, floor, mean, radians, sin
+from numpy import abs, arccos, arctan, asarray, cos, degrees, dot, floor, \
+                  mean, radians, sin, tan
+from numpy.linalg import norm
 
 class DegreeInt(BaseInt):
     """An integer >= 0 and < 360 representing an angle in degrees."""
@@ -51,6 +53,11 @@ class AngleDMS(HasTraits):
     seconds = SecondFloat
     decimal_degrees = Property(depends_on='degrees, minutes, seconds')
     radians = Property(depends_on='decimal_degrees')
+    geo_unit_vector = Property(depends_on='radians',
+                               desc='X-Y unit vector defined following ' \
+                                     'geographic convention, angle measured ' \
+                                     'clockwise from the positive y axis ' \
+                                     '(north).')
     
     @cached_property 
     def _get_decimal_degrees(self):
@@ -60,6 +67,10 @@ class AngleDMS(HasTraits):
     def _get_radians(self):
         return radians(self.decimal_degrees)
     
+    @cached_property
+    def _get_geo_unit_vector(self):
+        return asarray([sin(self.radians), cos(self.radians)])
+        
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
 class BaseSetup(HasTraits):
@@ -247,8 +258,9 @@ def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
     reverse = reverse_HAR.decimal_degrees + 180
     if reverse >= 360:
         reverse -= 360
-        
-    diff = dd2dms(abs(direct_HAR.decimal_degrees - reverse))
+    reverse = dd2dms(reverse)
+    
+    diff = dd2dms(abs(direct_HAR.decimal_degrees - reverse.decimal_degrees))
     if diff.decimal_degrees > 180:
         diff = dd2dms(360 - diff.decimal_degrees)
     d, m, s = tol.split(':')
@@ -260,8 +272,16 @@ def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
                                                      diff.degrees,
                                                      diff.minutes,
                                                      diff.seconds)
-    avg_dd = mean([reverse, direct_HAR.decimal_degrees])
-    return dd2dms(avg_dd)
+    avg_unit = reverse.geo_unit_vector + direct_HAR.geo_unit_vector
+
+    avg_unit = avg_unit / norm(avg_unit)
+    ref = [0, 1]
+    if avg_unit[0] >= 0:
+        return dd2dms(degrees(arccos(dot(avg_unit, ref) / 
+                                         (norm(avg_unit) * norm(ref)))))
+    else:
+        return dd2dms(360 - degrees(arccos(dot(avg_unit, ref) / 
+                                           (norm(avg_unit) * norm(ref)))))
 
 def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
     """ Average direct and reverse zenith angle observations and return an
