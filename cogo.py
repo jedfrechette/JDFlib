@@ -277,11 +277,9 @@ def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
     avg_unit = avg_unit / norm(avg_unit)
     ref = [0, 1]
     if avg_unit[0] >= 0:
-        return dd2dms(degrees(arccos(dot(avg_unit, ref) / 
-                                         (norm(avg_unit) * norm(ref)))))
+        return dd2dms(degrees(arccos(dot(avg_unit, ref))))
     else:
-        return dd2dms(360 - degrees(arccos(dot(avg_unit, ref) / 
-                                           (norm(avg_unit) * norm(ref)))))
+        return dd2dms(360 - degrees(arccos(dot(avg_unit, ref))))
 
 def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
     """ Average direct and reverse zenith angle observations and return an
