@@ -8,6 +8,7 @@ __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
 # Standard library imports.
 import csv
+from os.path import split
 
 # Enthought library imports.
 from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
@@ -339,7 +340,7 @@ if __name__ == "__main__":
     FILENAMES = get_filenames()
     if FILENAMES:
         for in_filename in FILENAMES:
-            OUT_FILENAME = '_'.join(['coordinates', in_filename])
+            OUT_FILENAME = '_'.join(['coordinates', split(in_filename)[-1]])
             BASE, OBSERVATIONS = load_measurements(in_filename)
             save_coordinates(BASE, OBSERVATIONS, OUT_FILENAME)
     else:
