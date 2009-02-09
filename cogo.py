@@ -336,12 +336,85 @@ def get_filenames():
         args = glob(args[0])
     return args
 
+def save_gama(observations, out_file='/tmp/test.gkf'):
+    """ Save measurements to an xml file for use with the GNU Gama network
+    adjustment software.
+    
+    ***WARNING*** This function is not complete"""
+    
+    from lxml import etree
+    
+    gama_file = open(out_file, 'w')
+    gama_file.write('<?xml version="1.0" ?>\n')
+    gama_file.write('<!DOCTYPE gama-local\n')
+    gama_file.write('  SYSTEM "http://www.gnu.org/software/gama/gama-local.dtd">\n\n')
+    
+    gama_local = etree.Element('gama-local')
+    network = etree.SubElement(gama_local, 'network')
+    network.set('axes-xy', 'en')
+    network.set('angles', 'left-handed')
+    description = etree.SubElement(network, 'description')
+    description.text = 'Example gama input file.'
+            
+    points_observations = etree.SubElement(network, 'points-observations')
+    points_observations.set('direction-stdev', '5')
+    points_observations.set('angle-stdev', '5')
+    points_observations.set('zenith-angle-stdev', '5')
+    points_observations.set('distance-stdev', '3')
+    
+    coordinates = etree.SubElement(points_observations, 'coordinates')
+    
+    point = etree.SubElement(coordinates, 'point',
+                             id='CLRS',
+                             x='248362.371',
+                             y='4275826.433',
+                             z='1715.945',
+                             fix='xyz')
+    
+    obs = etree.SubElement(points_observations, 'obs')
+    obs.set('from', BASE.id)
+    for o in observations:
+        angle = etree.SubElement(obs, 'angle')
+        angle.set('from', o.base.id)
+        angle.set('bs', 'm1a')
+        angle.set('fs', o.id)
+        angle.set('val', '%s-%s-%.3f' % (o.horizontal_angle.degrees,
+                                       o.horizontal_angle.minutes,
+                                       o.horizontal_angle.seconds))
+        angle.set('from_dh', str(o.base.z_offset))
+        angle.set('bs_dh', str(o.z_offset))
+        angle.set('fs_dh', str(o.z_offset))
+        
+        
+        z_angle = etree.SubElement(obs, 'z-angle')
+        z_angle.set('from', o.base.id)
+        z_angle.set('to', o.id)
+        z_angle.set('val', '%s-%s-%.3f' % (o.zenith_angle.degrees,
+                                         o.zenith_angle.minutes,
+                                         o.zenith_angle.seconds))
+        z_angle.set('from_dh', str(o.base.z_offset))
+        z_angle.set('to_dh', str(o.z_offset))
+        
+        
+        s_distance = etree.SubElement(obs, 's-distance')
+        s_distance.set('from', o.base.id)
+        s_distance.set('to', o.id)
+        s_distance.set('val', str(o.slope_distance))
+        s_distance.set('from_dh', str(o.base.z_offset))
+        s_distance.set('to_dh', str(o.z_offset))
+    
+    gama_xml = etree.ElementTree(gama_local)
+    gama_xml.write(gama_file,
+                      pretty_print=True)
 if __name__ == "__main__":
     FILENAMES = get_filenames()
     if FILENAMES:
+
         for in_filename in FILENAMES:
             OUT_FILENAME = '_'.join(['coordinates', split(in_filename)[-1]])
             BASE, OBSERVATIONS = load_measurements(in_filename)
             save_coordinates(BASE, OBSERVATIONS, OUT_FILENAME)
+            save_gama(OBSERVATIONS)
+
     else:
         gui()
