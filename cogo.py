@@ -71,6 +71,10 @@ class AngleDMS(HasTraits):
     @cached_property
     def _get_geo_unit_vector(self):
         return asarray([sin(self.radians), cos(self.radians)])
+    
+    def __str__(self): return "%s:%s:%.3f" % (self.degrees,
+                                              self.minutes,
+                                              self.seconds)
         
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
