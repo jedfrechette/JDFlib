@@ -16,8 +16,8 @@ from enthought.traits.api import BaseFloat, BaseInt, Float, HasTraits, \
 from enthought.traits.ui.api import View, Group, HGroup, Item
 from enthought.traits.ui.menu import LiveButtons
 
-from numpy import abs, arccos, asarray, cos, degrees, dot, empty, \
-                  mean, radians, sin
+from numpy import arccos, asarray, cos, degrees, dot, empty, \
+                  mean, ptp, radians, sin
 from numpy.linalg import norm
 
 class DegreeInt(BaseInt):
@@ -72,9 +72,9 @@ class AngleDMS(HasTraits):
     def _get_geo_unit_vector(self):
         return asarray([sin(self.radians), cos(self.radians)])
     
-    def __str__(self): return "%s:%s:%.3f" % (self.degrees,
-                                              self.minutes,
-                                              self.seconds)
+    def __str__(self): return u'%i\u00B0%i\'%.4f"' % (self.degrees,
+                                                      self.minutes,
+                                                      self.seconds)
         
     view = View(HGroup(Item('degrees'), Item('minutes'), Item('seconds')))
 
@@ -256,7 +256,10 @@ def parse_angle(angle_string):
     return angle_dms
 
 def avg_angles(angle_list):
-    """Calculate the average angle from a list."""
+    """Calculate the average angle from a list.
+    
+    Returns the average and the range of values in the list."""
+    angle_range = dd2dms(ptp([a.decimal_degrees for a in angle_list]))
     
     vectors = empty([len(angle_list), 2])
     for n_row, angle in enumerate(angle_list):
@@ -266,9 +269,9 @@ def avg_angles(angle_list):
     
     ref = [0, 1]
     if avg_vector[0] >= 0:
-        return dd2dms(degrees(arccos(dot(avg_vector, ref))))
+        return dd2dms(degrees(arccos(dot(avg_vector, ref)))), angle_range
     else:
-        return dd2dms(360 - degrees(arccos(dot(avg_vector, ref))))
+        return dd2dms(360 - degrees(arccos(dot(avg_vector, ref)))), angle_range
     
 def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
     """ Average direct and reverse horizontal angle right observations and
@@ -280,19 +283,14 @@ def avg_HAR(direct_HAR, reverse_HAR, observation_id='', tol='0:0:30.0'):
         reverse -= 360
     reverse = dd2dms(reverse)
     
-    diff = dd2dms(abs(direct_HAR.decimal_degrees - reverse.decimal_degrees))
-    if diff.decimal_degrees > 180:
-        diff = dd2dms(360 - diff.decimal_degrees)
+    angle, diff = avg_angles([reverse, direct_HAR])
     d, m, s = tol.split(':')
     angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
-    if diff.decimal_degrees > angle_tol.decimal_degrees:
-        print u'WARNING: Horizontal angle tolerance (%i\u00B0%i\'%.4f") exceeded.' \
-               % (angle_tol.degrees, angle_tol.minutes, angle_tol.seconds)
-        print u'%s HAR difference: %i\u00B0%i\'%.4f"\n' % (observation_id,
-                                                     diff.degrees,
-                                                     diff.minutes,
-                                                     diff.seconds)
-    return avg_angles([reverse, direct_HAR])
+    if min([360 - diff.decimal_degrees,
+            diff.decimal_degrees]) > angle_tol.decimal_degrees:
+        print u'WARNING: Horizontal angle tolerance (%s) exceeded.' % angle_tol
+        print u'%s HAR difference: %s\n' % (observation_id, diff)
+    return angle
 
 def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
     """ Average direct and reverse zenith angle observations and return an
@@ -302,18 +300,13 @@ def avg_ZA(direct_ZA, reverse_ZA, observation_id='', tol='0:0:30.0'):
     reverse = 360 - reverse_ZA.decimal_degrees
     reverse = dd2dms(reverse)
     
-    diff = dd2dms(abs(direct_ZA.decimal_degrees - reverse.decimal_degrees))
+    angle, diff = avg_angles([reverse, direct_ZA])
     d, m, s = tol.split(':')
     angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
     if diff.decimal_degrees > angle_tol.decimal_degrees:
-        print u'WARNING: Zenith angle tolerance (%i\u00B0%i\'%.4f") exceeded.' \
-               % (angle_tol.degrees, angle_tol.minutes, angle_tol.seconds)
-        print u'%s ZA difference: %i\u00B0%i\'%.4f"\n' % (observation_id,
-                                                     diff.degrees,
-                                                     diff.minutes,
-                                                     diff.seconds)
-
-    return avg_angles([reverse, direct_ZA])
+        print u'WARNING: Zenith angle tolerance (%s) exceeded.' % angle_tol
+        print u'%s ZA difference: %s\n' % (observation_id, diff)
+    return angle
 
 def avg_slope_distance(direct_slope_distance, reverse_slope_distance,
                        observation_id='', tol=0.01):
