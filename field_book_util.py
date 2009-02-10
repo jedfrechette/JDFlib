@@ -7,16 +7,17 @@ __version__ = "0.1"
 __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 
 # Local imports.
-from cogo import AngleDMS
+from cogo import AngleDMS, avg_angles, dd2dms
 
 # Standard library imports.
+from copy import copy
 import datetime
 from glob import glob
 from optparse import OptionParser
 from os import name, path
 
 # Numpy imports.
-from numpy import ma
+from numpy import asarray, ma, mean, ptp
 
 # Enthought library imports.
 from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, HasTraits, \
@@ -131,17 +132,6 @@ class SOKKIABook(HasTraits):
             print "Unable to parse %s" % input_filename
             raise
 
-def findall(L, value, start=0):
-    """Generator that returns index to all instances of value in L."""
-    i = start - 1
-    try:
-        i = L.index(value, i+i)
-        yield i
-    except ValueError:
-        print value
-        print i
-        pass
-
 def get_filenames():
     """Return a list of filenames to process."""
     parser = OptionParser(usage='%prog INPUT_FILES',
@@ -152,23 +142,71 @@ def get_filenames():
         args = glob(args[0])
     return args
 
-def average_codes(in_book):
+def average_codes(in_book,
+                  horizontal_tol='0:0:30.0', vertical_tol='0:0:30.0',
+                  distance_tol=0.01):
     """Average observations with the same code."""
+    out_book = copy(in_book)
+    out_book.record_list = [r for r in in_book.record_list \
+                            if r.record_type != 'OBS']
     tmp = {}
     for record in in_book.record_list:
         tmp[record.code] = 1
         code_list = tmp.keys()
-    
     record_codes = [rl.code for rl in in_book.record_list]
     for code in code_list:
-        masked_records =  ma.masked_not_equal(ma.asarray(record_codes), code)
-        masked_index = ma.arange(masked_records.size)
-        masked_index.mask = masked_records.mask
-        print code, masked_index.compressed()
-#    return out_book
+        masked_codes =  ma.masked_not_equal(ma.asarray(record_codes), code)
+        masked_index = ma.arange(masked_codes.size)
+        masked_index.mask = masked_codes.mask
+        record_list = asarray(in_book.record_list)[masked_index.compressed()]
+        
+        h_angles = []
+        v_angles = []
+        for record in record_list:
+            if record.dc == 'F1':
+                h_angles.append(record.north_horizontal)
+                v_angles.append(record.east_vertical)
+            elif record.dc == 'F2':
+                reverse = record.north_horizontal.decimal_degrees + 180
+                if reverse >= 360:
+                    reverse -= 360
+                h_angles.append(dd2dms(reverse))
+                v_angles.append(dd2dms(360 \
+                                       - record.east_vertical.decimal_degrees))
+            else:
+                continue
+        distances = [r.elevation_distance for r in record_list]
+        avg_record = SOKKIARecord(record_type = 'OBS',
+                                  point_id = record_list[0].point_id,
+                                  dc = 'F1',
+                                  code = code)
+        avg_record.north_horizontal, range_horizontal = avg_angles(h_angles)
+        avg_record.east_vertical, range_vertical = avg_angles(v_angles)
+        avg_record.elevation_distance = mean(distances)
+        range_distance = ptp([distances])
+        
+        
+        d, m, s = horizontal_tol.split(':')
+        angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
+        if range_horizontal.decimal_degrees > angle_tol.decimal_degrees:
+            print u'WARNING: Horizontal angle tolerance (%s) exceeded.' \
+                    % angle_tol
+            print u'%s HAR difference: %s\n' % (avg_record.code,
+                                                range_horizontal)
+        d, m, s = vertical_tol.split(':')
+        angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
+        if range_vertical.decimal_degrees > angle_tol.decimal_degrees:
+            print u'WARNING: Zenith angle tolerance (%s) exceeded.' % angle_tol
+            print u'%s ZA difference: %s\n' % (avg_record.code, range_vertical)
+        if range_distance > distance_tol:
+            print 'WARNING: Slope distance tolerance (%.4f) exceeded.' \
+                   % distance_tol
+            print '%s S difference: %.4f\n' % (avg_record.code, range_distance)
+        out_book.record_list.append(avg_record)
+    return out_book
 
 if __name__ == '__main__':
     for in_filename in get_filenames():
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
-        average_codes(BOOK)
+        AVG_BOOK = average_codes(BOOK)
