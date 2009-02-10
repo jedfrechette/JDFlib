@@ -51,6 +51,7 @@ class SOKKIABook(HasTraits):
     distance_unit = String('Meters')
     angle_unit = String('Degrees [dd-mm-ss.ss]')
     point_count = Int
+    record_divider = String('-'*135)
     record_pattern = Dict
     record_list = List
     
@@ -91,7 +92,8 @@ class SOKKIABook(HasTraits):
                                                 heading[150:].strip()],
                                                range(7))) 
                 in_file.readline()
-                records = ''.join(in_file.readlines()).split('-'*135 + '\r\n')
+                records = ''.join(in_file.readlines())\
+                            .split(self.record_divider + '\r\n')
                 for record in records:
                     lines = record.splitlines()
                     for line in lines:
@@ -131,7 +133,33 @@ class SOKKIABook(HasTraits):
         except:
             print "Unable to parse %s" % input_filename
             raise
+        
+    def save(self, output_filename):
+        out_file = open(output_filename, 'wb')
+        out_file.write('< Condition >\n')
+        out_file.write('Project : %s\n' % self.project)
+        out_file.write('File Name : %s\n' % self.sdr_file)
+        out_file.write('Print Date : %s %s\n' % (self.print_date,
+                                                 self.print_time.strftime('%I:%M:%S %p')))
+        out_file.write('Distance Unit : %s\n' % self.distance_unit)
+        out_file.write('Angle Unit : %s\n' % self.angle_unit)
+        out_file.write('Pt. Count : %s\n\n' % self.point_count)
+        out_file.write('%s\n' % self.record_divider)
 
+        col_idx = dict(zip(self.record_pattern.values(),
+                           self.record_pattern.keys()))
+        col_width = {0: 8,
+                     1: 12,
+                     2: 5,
+                     3: 45,
+                     4: 45,
+                     5: 35,
+                     6: 10}
+        for col in xrange(max(col_idx.keys())+1):
+            out_file.write(col_idx[col].ljust(col_width[col]))
+        out_file.write('\n%s\n' % self.record_divider)
+        out_file.close()
+        
 def get_filenames():
     """Return a list of filenames to process."""
     parser = OptionParser(usage='%prog INPUT_FILES',
@@ -149,6 +177,7 @@ def average_codes(in_book,
     out_book = copy(in_book)
     out_book.record_list = [r for r in in_book.record_list \
                             if r.record_type != 'OBS']
+    out_book.point_count = 0
     tmp = {}
     for record in in_book.record_list:
         tmp[record.code] = 1
@@ -203,6 +232,7 @@ def average_codes(in_book,
                    % distance_tol
             print '%s S difference: %.4f\n' % (avg_record.code, range_distance)
         out_book.record_list.append(avg_record)
+        out_book.point_count += 1
     return out_book
 
 if __name__ == '__main__':
@@ -210,3 +240,4 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_codes(BOOK)
+        AVG_BOOK.save('new_%s' % in_filename)
