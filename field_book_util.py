@@ -11,13 +11,14 @@ from cogo import AngleDMS, avg_angles, dd2dms
 
 # Standard library imports.
 from copy import copy
+import csv
 import datetime
 from glob import glob
 from optparse import OptionParser
 from os import name, path
 
 # Numpy imports.
-from numpy import asarray, ma, mean, ptp
+from numpy import asarray, empty, ma, mean, ptp
 
 # Enthought library imports.
 from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, HasTraits, \
@@ -41,6 +42,16 @@ class FieldbookSettings(SOKKIARecord):
     curvature_and_refraction_correction = Bool
     include_elevation = Bool
     refraction_constant = Float
+    
+class Station(SOKKIARecord):
+    """Base station description."""
+    north_horizontal = Float
+    east_vertical = Float
+    theodolite_height = Float
+    
+class Target(SOKKIARecord):
+    """Target description."""
+    target_height = Float
     
 class SOKKIABook(HasTraits):
     """SOKKIA text fieldbook."""
@@ -92,11 +103,14 @@ class SOKKIABook(HasTraits):
                                                 heading[150:].strip()],
                                                range(7))) 
                 in_file.readline()
-                records = ''.join(in_file.readlines())\
-                            .split(self.record_divider + '\r\n')
+                file_text = ''.join(in_file.readlines())
+                # Normalize new lines and split records.
+                file_text = file_text.replace('\r\n', '\n').replace('\r', '\n')
+                records = file_text.split('\n%s\n' % self.record_divider)
                 for record in records:
                     lines = record.splitlines()
-                    for line in lines:
+                    record = empty([len(lines), 7], dtype='S45')
+                    for line_num, line in enumerate(lines):
                         line = [line[:8].strip(),
                                 line[8:20].strip(),
                                 line[20:25].strip(),
@@ -104,29 +118,57 @@ class SOKKIABook(HasTraits):
                                 line[70:115].strip(),
                                 line[115:150].strip(),
                                 line[150:].strip()]
-                        if line[1] == 'OBS':
-                            obs = SOKKIARecord()
-                            obs.point_id = int(line[self.record_pattern['Pt.']])
-                            obs.record_type = line[self.record_pattern['Record Type']]
-                            obs.dc = line[self.record_pattern['DC']]
-                            h = line[self.record_pattern['North/Hor']]
-                            h = h.split(':')[-1].split('-')
-                            obs.north_horizontal = AngleDMS(degrees=int(h[0]),
-                                                            minutes=int(h[1]),
-                                                            seconds=int(h[2]),)
-                            v = line[self.record_pattern['East/Vert']]
-                            v = v.split(':')[-1].split('-')
-                            obs.east_vertical = AngleDMS(degrees=int(v[0]),
-                                                         minutes=int(v[1]),
-                                                         seconds=int(v[2]),)
-                            d = line[self.record_pattern['Elev./Dist']]
-                            try:
-                                d = float(d.split(':')[-1])
-                            except ValueError:
-                                d = 0
-                            obs.elevation_distance = d
-                            obs.code = line[self.record_pattern['Code']]
-                            self.record_list.append(obs)
+                        record[line_num, :] = line
+                    if len(record.shape) == 1:
+                        record = record.reshape([1, record.size])
+                    if record.shape[0] == 0:
+                        continue
+                    if record[0, 1] == 'OBS':
+                        obs = SOKKIARecord()
+                        obs.point_id = int(record[0, self.record_pattern['Pt.']])
+                        obs.record_type = record[0, self.record_pattern['Record Type']]
+                        obs.dc = record[0, self.record_pattern['DC']]
+                        obs.code = str(record[0, self.record_pattern['Code']]).strip()
+                        h = record[0, self.record_pattern['North/Hor']]
+                        h = h.split(':')[-1].split('-')
+                        obs.north_horizontal = AngleDMS(degrees=int(h[0]),
+                                                        minutes=int(h[1]),
+                                                        seconds=int(h[2]),)
+                        v = record[0, self.record_pattern['East/Vert']]
+                        v = v.split(':')[-1].split('-')
+                        obs.east_vertical = AngleDMS(degrees=int(v[0]),
+                                                     minutes=int(v[1]),
+                                                     seconds=int(v[2]),)
+                        d = record[0, self.record_pattern['Elev./Dist']]
+                        try:
+                            d = float(d.split(':')[-1])
+                        except ValueError:
+                            d = 0
+                        obs.elevation_distance = d
+                        self.record_list.append(obs)
+                    elif record[0, 1] == 'STN':
+                        stn = Station()
+                        stn.point_id = int(record[0, self.record_pattern['Pt.']])
+                        stn.record_type = record[0, self.record_pattern['Record Type']]
+                        stn.dc = record[0, self.record_pattern['DC']]
+                        stn.code = str(record[0, self.record_pattern['Code']]).strip()
+                        n = record[0, self.record_pattern['North/Hor']]
+                        stn.north_horizontal = float(n.split(':')[-1])
+                        e = record[0, self.record_pattern['East/Vert']]
+                        stn.east_vertical = float(n.split(':')[-1])
+                        d = record[0, self.record_pattern['Elev./Dist']]
+                        stn.elevation_distance = float(d.split(':')[-1])
+                        t = record[1, self.record_pattern['North/Hor']]
+                        stn.theodolite_height = float(t.split(':')[-1])
+                        self.record_list.append(stn)
+                    elif record[0, 1] == 'TARGET':
+                        trg = Target()
+                        trg.record_type = record[0, self.record_pattern['Record Type']]
+                        trg.dc = record[0, self.record_pattern['DC']]
+                        trg.code = str(record[0, self.record_pattern['Code']]).strip()
+                        h = record[0, self.record_pattern['North/Hor']]
+                        trg.target_height = float(h.split(':')[-1])
+                        self.record_list.append(trg)
             finally:
                 in_file.close()
             
@@ -159,6 +201,50 @@ class SOKKIABook(HasTraits):
             out_file.write(col_idx[col].ljust(col_width[col]))
         out_file.write('\n%s\n' % self.record_divider)
         out_file.close()
+
+    def export_direction_obs(self, output_filename,
+                             direction_sd = "NOOBS",
+                             zenith_sd = "NOOBS",
+                             chord_sd = "NOOBS"):
+        out_file = open(output_filename, 'wb')
+        out_file.write('! ')
+        cols = ['AT Station Name',
+                'TO Station Name',
+                'Direction',
+                'Direction SD',
+                'Zenith',
+                'Zenith SD',
+                'Chord',
+                'Chord SD',
+                'Instr Hgt',
+                'Targ Hgt',
+                'DirSetNum']
+        rows = [cols]
+        for record in self.record_list:
+            if record.record_type == "STN":
+                at = record.code
+                instrument_height = record.theodolite_height
+            if record.record_type == "TARGET":
+                target_height = record.target_height
+            if record.record_type == "OBS":
+                row = ['$DIR_COMPACT']
+                row.append(at)
+                row.append(record.code)
+                row.append('%i%s%.4f' % (record.north_horizontal.degrees,
+                                         record.north_horizontal.minutes,
+                                         record.north_horizontal.seconds))
+                row.append(direction_sd)
+                row.append('%i%s%.4f' % (record.east_vertical.degrees,
+                                         record.east_vertical.minutes,
+                                         record.east_vertical.seconds))
+                row.append(zenith_sd)
+                row.append(record.elevation_distance)
+                row.append(chord_sd)
+                row.append(instrument_height)
+                row.append(target_height)
+                rows.append(row)
+        writer = csv.writer(out_file, delimiter=';')
+        writer.writerows(rows)
         
 def get_filenames():
     """Return a list of filenames to process."""
@@ -180,8 +266,9 @@ def average_codes(in_book,
     out_book.point_count = 0
     tmp = {}
     for record in in_book.record_list:
-        tmp[record.code] = 1
-        code_list = tmp.keys()
+        if record.record_type == 'OBS':
+            tmp[record.code] = 1
+    code_list = tmp.keys()
     record_codes = [rl.code for rl in in_book.record_list]
     for code in code_list:
         masked_codes =  ma.masked_not_equal(ma.asarray(record_codes), code)
@@ -217,7 +304,8 @@ def average_codes(in_book,
         
         d, m, s = horizontal_tol.split(':')
         angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
-        if range_horizontal.decimal_degrees > angle_tol.decimal_degrees:
+        if min([360 - range_horizontal.decimal_degrees,
+               range_horizontal.decimal_degrees]) > angle_tol.decimal_degrees:
             print u'WARNING: Horizontal angle tolerance (%s) exceeded.' \
                     % angle_tol
             print u'%s HAR difference: %s\n' % (avg_record.code,
@@ -240,4 +328,4 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_codes(BOOK)
-        AVG_BOOK.save('new_%s' % in_filename)
+        AVG_BOOK.export_direction_obs('new_%s' % in_filename)
