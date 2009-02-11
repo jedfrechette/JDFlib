@@ -241,9 +241,7 @@ class SOKKIABook(HasTraits):
                 'Targ Hgt']
         rows = [cols]
         for record in self.record_list:
-            if record.record_type == "JOB":
-                job = record.job_id
-            elif record.record_type == "STN":
+            if record.record_type == "STN":
                 at = record.code
                 instrument_height = record.theodolite_height
             elif record.record_type == "TARGET":
@@ -321,7 +319,57 @@ class SOKKIABook(HasTraits):
                 rows.append(row)
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
-        
+
+    def export_azimuth_obs(self,
+                             output_filename,
+                             direction_sd = 5,
+                             zenith_sd = 5,
+                             chord_sd = 3,
+                             chord_ppm = 2):
+        """Export fieldbook as azimuth observations in a text format that
+        is compatible with the COLUMBUS network adjustment software."""
+        out_file = open(output_filename, 'w')
+        out_file.write('! Chord (Slope) Distance PPM correction\n')
+        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
+        out_file.write('! ')
+        cols = ['AT Station Name',
+                'TO Station Name',
+                'Azimuth',
+                'Azimuth SD',
+                'Zenith',
+                'Zenith SD',
+                'Chord',
+                'Chord SD',
+                'Instr Hgt',
+                'Targ Hgt',
+                'DirSetNum']
+        rows = [cols]
+        for record in self.record_list:
+            if record.record_type == "STN":
+                at = record.code
+                instrument_height = record.theodolite_height
+            elif record.record_type == "TARGET":
+                target_height = record.target_height
+            elif record.record_type == "OBS":
+                row = ['$AZ_COMPACT']
+                row.append(at)
+                row.append(record.code)
+                row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
+                                               record.north_horizontal.minutes,
+                                               record.north_horizontal.seconds))
+                row.append(direction_sd)
+                row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
+                                               record.east_vertical.minutes,
+                                               record.east_vertical.seconds))
+                row.append(zenith_sd)
+                row.append(record.elevation_distance)
+                row.append(chord_sd)
+                row.append(instrument_height)
+                row.append(target_height)
+                rows.append(row)
+        writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
+        writer.writerows(rows)
+                
 def get_filenames():
     """Return a list of filenames to process."""
     parser = OptionParser(usage='%prog INPUT_FILES',
@@ -404,5 +452,9 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_codes(BOOK)
-        AVG_BOOK.export_direction_obs('%s.obs' % \
-                                      path.splitext(path.basename(in_filename))[0])
+        AVG_BOOK.export_hor_obs('%s.obs' % \
+                                path.splitext(path.basename(in_filename))[0])
+        AVG_BOOK.export_azimuth_obs('%s.obs' % \
+                                    path.splitext(path.basename(in_filename))[0])
+#        AVG_BOOK.export_direction_obs('%s.obs' % \
+#                                      path.splitext(path.basename(in_filename))[0])
