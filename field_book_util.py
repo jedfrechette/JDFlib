@@ -26,7 +26,7 @@ from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, HasTraits,
 
 class SOKKIARecord(HasTraits):
     """Single or multiline record in a SOKKIA text fieldbook."""
-    record_type = Enum('NM', 'Fbk Settings', 'SCALE', 'INSTR', 'RED',
+    record_type = Enum('Fbk Settings', 'JOB', 'SCALE', 'INSTR', 'RED',
                        'BKB', 'TARGET', 'STN', 'OBS', 'POS')
     point_id = Int
     dc = Enum(None, 'NM', 'KI', 'TP', 'F1', 'F2')
@@ -42,6 +42,11 @@ class FieldbookSettings(SOKKIARecord):
     curvature_and_refraction_correction = Bool
     include_elevation = Bool
     refraction_constant = Float
+    
+class Job(SOKKIARecord):
+    """Job name and source file."""
+    source_file = String
+    job_id = String
     
 class Station(SOKKIARecord):
     """Base station description."""
@@ -146,6 +151,14 @@ class SOKKIABook(HasTraits):
                             d = 0
                         obs.elevation_distance = d
                         self.record_list.append(obs)
+                    elif record[0, 1] == 'JOB':
+                        job = Job()
+                        job.record_type = record[0, self.record_pattern['Record Type']]
+                        job.dc = record[0, self.record_pattern['DC']]
+                        job.source_file = record[0, self.record_pattern['Elev./Dist']].strip()
+                        j = record[0, self.record_pattern['North/Hor']]
+                        job.job_id = j.split(':')[-1].strip()
+                        self.record_list.append(job)
                     elif record[0, 1] == 'STN':
                         stn = Station()
                         stn.point_id = int(record[0, self.record_pattern['Pt.']])
