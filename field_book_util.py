@@ -253,13 +253,13 @@ class SOKKIABook(HasTraits):
                 row.append(at)
                 row.append(record.code)
                 row.append('BS_STATION')
-                row.append('%i%s%.4f' % (record.north_horizontal.degrees,
-                                         record.north_horizontal.minutes,
-                                         record.north_horizontal.seconds))
+                row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
+                                               record.north_horizontal.minutes,
+                                               record.north_horizontal.seconds))
                 row.append(hor_sd)
-                row.append('%i%s%.4f' % (record.east_vertical.degrees,
-                                         record.east_vertical.minutes,
-                                         record.east_vertical.seconds))
+                row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
+                                               record.east_vertical.minutes,
+                                               record.east_vertical.seconds))
                 row.append(zenith_sd)
                 row.append(record.elevation_distance)
                 row.append(chord_sd)
@@ -305,13 +305,13 @@ class SOKKIABook(HasTraits):
                 row = ['$DIR_COMPACT']
                 row.append(at)
                 row.append(record.code)
-                row.append('%i%s%.4f' % (record.north_horizontal.degrees,
-                                         record.north_horizontal.minutes,
-                                         record.north_horizontal.seconds))
+                row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
+                                               record.north_horizontal.minutes,
+                                               record.north_horizontal.seconds))
                 row.append(direction_sd)
-                row.append('%i%s%.4f' % (record.east_vertical.degrees,
-                                         record.east_vertical.minutes,
-                                         record.east_vertical.seconds))
+                row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
+                                               record.east_vertical.minutes,
+                                               record.east_vertical.seconds))
                 row.append(zenith_sd)
                 row.append(record.elevation_distance)
                 row.append(chord_sd)
