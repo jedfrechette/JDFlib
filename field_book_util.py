@@ -216,10 +216,13 @@ class SOKKIABook(HasTraits):
         out_file.close()
 
     def export_direction_obs(self, output_filename,
-                             direction_sd = "NOOBS",
-                             zenith_sd = "NOOBS",
-                             chord_sd = "NOOBS"):
-        out_file = open(output_filename, 'wb')
+                             direction_sd = 5,
+                             zenith_sd = 5,
+                             chord_sd = 3,
+                             chord_ppm = 2):
+        out_file = open(output_filename, 'w')
+        out_file.write('! Chord (Slope) Distance PPM correction\n')
+        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
         out_file.write('! ')
         cols = ['AT Station Name',
                 'TO Station Name',
@@ -234,12 +237,14 @@ class SOKKIABook(HasTraits):
                 'DirSetNum']
         rows = [cols]
         for record in self.record_list:
-            if record.record_type == "STN":
+            if record.record_type == "JOB":
+                job = record.job_id
+            elif record.record_type == "STN":
                 at = record.code
                 instrument_height = record.theodolite_height
-            if record.record_type == "TARGET":
+            elif record.record_type == "TARGET":
                 target_height = record.target_height
-            if record.record_type == "OBS":
+            elif record.record_type == "OBS":
                 row = ['$DIR_COMPACT']
                 row.append(at)
                 row.append(record.code)
@@ -255,8 +260,9 @@ class SOKKIABook(HasTraits):
                 row.append(chord_sd)
                 row.append(instrument_height)
                 row.append(target_height)
+                row.append(job)
                 rows.append(row)
-        writer = csv.writer(out_file, delimiter=';')
+        writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
         
 def get_filenames():
@@ -341,4 +347,5 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_codes(BOOK)
-        AVG_BOOK.export_direction_obs('new_%s' % in_filename)
+        AVG_BOOK.export_direction_obs('%s.obs' % \
+                                      path.splitext(path.basename(in_filename))[0])
