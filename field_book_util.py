@@ -215,11 +215,68 @@ class SOKKIABook(HasTraits):
         out_file.write('\n%s\n' % self.record_divider)
         out_file.close()
 
-    def export_direction_obs(self, output_filename,
+    def export_hor_obs(self,
+                       output_filename,
+                       hor_sd = 5,
+                       zenith_sd = 5,
+                       chord_sd = 3,
+                       chord_ppm = 2):
+        """Export fieldbook as Horizontal Angle Right observations in a text
+        format that is compatible with the COLUMBUS network adjustment
+        software."""
+        out_file = open(output_filename, 'w')
+        out_file.write('! Chord (Slope) Distance PPM correction\n')
+        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
+        out_file.write('! ')
+        cols = ['AT Station Name',
+                'TO Station Name',
+                'BS Station Name',
+                'Hor Angle',
+                'Hor Angle SD',
+                'Zenith',
+                'Zenith SD',
+                'Chord',
+                'Chord SD',
+                'Instr Hgt',
+                'Targ Hgt']
+        rows = [cols]
+        for record in self.record_list:
+            if record.record_type == "JOB":
+                job = record.job_id
+            elif record.record_type == "STN":
+                at = record.code
+                instrument_height = record.theodolite_height
+            elif record.record_type == "TARGET":
+                target_height = record.target_height
+            elif record.record_type == "OBS":
+                row = ['$HOR_COMPACT']
+                row.append(at)
+                row.append(record.code)
+                row.append('BS_STATION')
+                row.append('%i%s%.4f' % (record.north_horizontal.degrees,
+                                         record.north_horizontal.minutes,
+                                         record.north_horizontal.seconds))
+                row.append(hor_sd)
+                row.append('%i%s%.4f' % (record.east_vertical.degrees,
+                                         record.east_vertical.minutes,
+                                         record.east_vertical.seconds))
+                row.append(zenith_sd)
+                row.append(record.elevation_distance)
+                row.append(chord_sd)
+                row.append(instrument_height)
+                row.append(target_height)
+                rows.append(row)
+        writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
+        writer.writerows(rows)
+        
+    def export_direction_obs(self,
+                             output_filename,
                              direction_sd = 5,
                              zenith_sd = 5,
                              chord_sd = 3,
                              chord_ppm = 2):
+        """Export fieldbook as direction observations in a text format that
+        is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
         out_file.write('! Chord (Slope) Distance PPM correction\n')
         out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
