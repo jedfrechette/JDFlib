@@ -14,9 +14,6 @@ from time import localtime
 from urllib import urlopen
 from StringIO import StringIO
 
-# Numpy imports
-from numpy import median
-
 # Matplotlib imports
 from matplotlib.pyplot import show
 
@@ -75,7 +72,6 @@ def get_nm_climate(station='kabq', start_date = '20040101', end_date = 'today'):
         if precip < 0:
             precip = 0
             accum_precip = 0
-        print row[0], row[19], accum_precip, precip
         accum_precip += precip
         csv_data.append(' '.join([row[0].strip(),
                                   row[1].strip(),
@@ -103,18 +99,42 @@ if __name__ == "__main__":
         MAX_TEMP, MIN_TEMP, ACCUM_PRECIP = CLIMATE.split()
         
         FIG = tpl.tsfigure()
+        FIG.subplots_adjust(hspace = 0.1)
         
-        FSP = FIG.add_tsplot(311)
-        FSP.tsplot(backward_fill(WATER*748))
-        FSP_RIGHT = FSP.add_yaxis(position='right')
-        FSP_RIGHT.tsplot(ACCUM_PRECIP)
-                   
-        FSP = FIG.add_tsplot(312)
-        FSP.tsplot(backward_fill(ELECTRIC))
+        TEMP_PLOT = FIG.add_tsplot(313)
+        TEMP_PLOT.tsplot(MIN_TEMP, color='0.5')
+        TEMP_PLOT.tsplot(MAX_TEMP, color='0.5')
+        GAS_PLOT = TEMP_PLOT.add_yaxis(position='right')
+        GAS_PLOT.tsplot(backward_fill(GAS))
+        TEMP_PLOT.set_ylabel(u'Temperature range, \u2109F')
+        GAS_PLOT.set_ylabel('Gas usage, therms')
         
-        FSP = FIG.add_tsplot(313)
-        FSP.tsplot(backward_fill(GAS))
-        FSP_RIGHT = FSP.add_yaxis(position='right')
-        FSP_RIGHT.tsplot(MIN_TEMP)
-        FSP_RIGHT.tsplot(MAX_TEMP)
+        PRECIP_PLOT = FIG.add_tsplot(311, sharex=TEMP_PLOT)
+        PRECIP_PLOT.tsplot(ACCUM_PRECIP, color='0.5')
+        WATER_PLOT = PRECIP_PLOT.add_yaxis(position='right')
+        WATER_PLOT.tsplot(backward_fill(WATER*748))
+        PRECIP_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
+                                    visible=False)
+        WATER_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
+                                   visible=False)
+        PRECIP_PLOT.set_ylabel('Precipitation, in.')
+        WATER_PLOT.set_ylabel('Water usage, gal.')
+        WATER_PLOT.set_title('Utility usage for 1613 Columbia Dr. SE, ' \
+                             'Albuquerque, NM\n' \
+                             'Weather data from Albuquerque International ' \
+                             'Airport (KABQ)')
+        
+        #TODO: Prevent the y tick labels from overlapping the other plots.
+        #TODO: Find local station with solar radiation (City of Albuquerque
+        #      stations from NMSU supposedly have the data but may have been
+        #      discontinued.)
+        ELECTRIC_PLOT = FIG.add_tsplot(312, sharex=TEMP_PLOT)
+        ELECTRIC_PLOT.tsplot(backward_fill(ELECTRIC))
+        ELECTRIC_PLOT.set_xticklabels(ELECTRIC_PLOT.get_xticklabels(),
+                                      visible=False)
+        ELECTRIC_PLOT.set_ylabel('Electric sage, kWh')
+        
+        TEMP_PLOT.format_dateaxis()
+        
+        
     show()
