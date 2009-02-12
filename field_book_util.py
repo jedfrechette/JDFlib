@@ -460,11 +460,11 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_codes(BOOK)
-        AVG_BOOK.export_hor_obs('%s.obs' % \
-                                path.splitext(path.basename(in_filename))[0],
-                                bs_station='m1a',
-                                hor_offset=0.00111111)
-#        AVG_BOOK.export_azimuth_obs('%s.obs' % \
-#                                    path.splitext(path.basename(in_filename))[0])
+#        AVG_BOOK.export_hor_obs('%s.obs' % \
+#                                path.splitext(path.basename(in_filename))[0],
+#                                bs_station='m3a',
+#                                hor_offset= -0.0319444)
+        AVG_BOOK.export_azimuth_obs('%s.obs' % \
+                                    path.splitext(path.basename(in_filename))[0])
 #        AVG_BOOK.export_direction_obs('%s.obs' % \
 #                                      path.splitext(path.basename(in_filename))[0])
