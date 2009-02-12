@@ -221,7 +221,7 @@ class SOKKIABook(HasTraits):
                        hor_offset = 0,
                        hor_sd = 5,
                        zenith_sd = 5,
-                       chord_sd = 3,
+                       chord_sd = .003,
                        chord_ppm = 2):
         """Export fieldbook as Horizontal Angle Right observations in a text
         format that is compatible with the COLUMBUS network adjustment
@@ -280,7 +280,7 @@ class SOKKIABook(HasTraits):
                              output_filename,
                              direction_sd = 5,
                              zenith_sd = 5,
-                             chord_sd = 3,
+                             chord_sd = .003,
                              chord_ppm = 2):
         """Export fieldbook as direction observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
@@ -333,7 +333,7 @@ class SOKKIABook(HasTraits):
                              output_filename,
                              direction_sd = 5,
                              zenith_sd = 5,
-                             chord_sd = 3,
+                             chord_sd = .003,
                              chord_ppm = 2):
         """Export fieldbook as azimuth observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
