@@ -14,11 +14,15 @@ from time import localtime
 from urllib import urlopen
 from StringIO import StringIO
 
+# Numpy imports
+from numpy import loadtxt
+from numpy.ma import masked_less
+
 # Matplotlib imports
 from matplotlib.pyplot import show
 
 # TimeSeries imports
-from scikits.timeseries import Date, tsfromtxt
+from scikits.timeseries import Date, time_series, tsfromtxt
 from scikits.timeseries.lib.interpolate import backward_fill
 import scikits.timeseries.lib.plotlib as tpl
 
@@ -79,16 +83,19 @@ def get_nm_climate(station='kabq', start_date = '20040101', end_date = 'today'):
                                   str(precip)]))
     csv_data = '\n'.join(csv_data)
     climate = tsfromtxt(StringIO(csv_data), dtype='float', datecols=0,
-                        dateconverter=parse_nmsu_date)
+                        missing='-999', dateconverter=parse_nmsu_date)
     return climate
     
 if __name__ == "__main__":
     for in_filename in get_filenames():
-        USAGE = tsfromtxt(in_filename, delimiter=',', datecols=0,
-                          skiprows=6, dateconverter=parse_date)
-        ELECTRIC, GAS, WATER = USAGE.split()
-        START = USAGE.dates[0]
-        END = USAGE.dates[-1]
+        data = loadtxt(in_filename, delimiter=',')
+        dates = data[:, 0].astype(int).tolist()
+        dates = [parse_date(str(d)) for d in dates]
+        ELECTRIC = time_series(masked_less(data[:, 1], 0), dates)
+        GAS = time_series(masked_less(data[:, 2], 0), dates)
+        WATER = time_series(masked_less(data[:, 3], 0), dates)
+        START = dates[0]
+        END = dates[-1]
         CLIMATE = get_nm_climate(start_date='%i%.2i%.2i' % (START.year,
                                                             START.month,
                                                             START.day),
@@ -102,17 +109,19 @@ if __name__ == "__main__":
         FIG.subplots_adjust(hspace = 0.1)
         
         TEMP_PLOT = FIG.add_tsplot(313)
-        TEMP_PLOT.tsplot(MIN_TEMP, color='0.5')
-        TEMP_PLOT.tsplot(MAX_TEMP, color='0.5')
+        TEMP_PLOT.tsplot(MIN_TEMP, color='0.5', zorder=10)
+        TEMP_PLOT.tsplot(MAX_TEMP, color='0.5', zorder=10)
         GAS_PLOT = TEMP_PLOT.add_yaxis(position='right')
-        GAS_PLOT.tsplot(backward_fill(GAS))
+        GAS_PLOT.tsplot(backward_fill(GAS), zorder=10)
+        TEMP_PLOT.grid(linestyle='-', color='0.9', zorder=0)
         TEMP_PLOT.set_ylabel(u'Temperature range, \u2109F')
         GAS_PLOT.set_ylabel('Gas usage, therms')
         
         PRECIP_PLOT = FIG.add_tsplot(311, sharex=TEMP_PLOT)
-        PRECIP_PLOT.tsplot(ACCUM_PRECIP, color='0.5')
+        PRECIP_PLOT.tsplot(ACCUM_PRECIP, color='0.5', zorder=10)
         WATER_PLOT = PRECIP_PLOT.add_yaxis(position='right')
-        WATER_PLOT.tsplot(backward_fill(WATER*748))
+        WATER_PLOT.tsplot(backward_fill(WATER*748), zorder=10)
+        PRECIP_PLOT.grid(linestyle='-', color='0.9', zorder=1)
         PRECIP_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
                                     visible=False)
         WATER_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
@@ -129,7 +138,8 @@ if __name__ == "__main__":
         #      stations from NMSU supposedly have the data but may have been
         #      discontinued.)
         ELECTRIC_PLOT = FIG.add_tsplot(312, sharex=TEMP_PLOT)
-        ELECTRIC_PLOT.tsplot(backward_fill(ELECTRIC))
+        ELECTRIC_PLOT.tsplot(backward_fill(ELECTRIC), zorder=10)
+        ELECTRIC_PLOT.grid(linestyle='-', color='0.9', zorder=1)
         ELECTRIC_PLOT.set_xticklabels(ELECTRIC_PLOT.get_xticklabels(),
                                       visible=False)
         ELECTRIC_PLOT.set_ylabel('Electric sage, kWh')
