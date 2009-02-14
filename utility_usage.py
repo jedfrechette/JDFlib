@@ -9,7 +9,7 @@ __license__ = "MIT <http://opensource.org/licenses/mit-license.php>"
 # Standard library imports.
 from glob import glob
 from optparse import OptionParser
-from os import name
+from os import name, path
 from time import localtime
 from urllib import urlopen
 from StringIO import StringIO
@@ -37,8 +37,6 @@ def get_filenames():
     return args
 
 def parse_date(packed_date):
-    print packed_date
-    print packed_date.split('-')
     packed_date = str(packed_date)
     y, m, d = packed_date.split('-')
     return Date('D',
@@ -90,9 +88,9 @@ def get_nm_climate(station='kabq', start_date = '20040101', end_date = 'today'):
     return climate
     
 if __name__ == "__main__":
-    for in_filename in get_filenames():
-        data = loadtxt(in_filename, delimiter=',', usecols=[1, 2, 3])
-        data_file = open(in_filename)
+    for IN_FILENAME in get_filenames():
+        data = loadtxt(IN_FILENAME, delimiter=',', usecols=[1, 2, 3])
+        data_file = open(IN_FILENAME)
         dates = []
         for row in data_file:
             if row[0] == '#':
@@ -114,7 +112,7 @@ if __name__ == "__main__":
         CLIMATE.tofile('/tmp/test.txt')
         MAX_TEMP, MIN_TEMP, ACCUM_PRECIP = CLIMATE.split()
         
-        FIG = tpl.tsfigure()
+        FIG = tpl.tsfigure(figsize=(10, 7))
         FIG.subplots_adjust(hspace = 0.1)
         
         TEMP_PLOT = FIG.add_tsplot(313)
@@ -139,7 +137,8 @@ if __name__ == "__main__":
         WATER_PLOT.set_ylabel('Water usage, gal.')
         WATER_PLOT.set_title('Utility usage for 1613 Columbia Dr. SE, ' \
                              'Albuquerque, NM\n' \
-                             'Weather data from Albuquerque International ' \
+                             'Usage is given per billing period (~30 days).\n' \
+                             'Daily weather data from Albuquerque International ' \
                              'Airport (KABQ)')
         
         #TODO: Prevent the y tick labels from overlapping the other plots.
@@ -151,9 +150,12 @@ if __name__ == "__main__":
         ELECTRIC_PLOT.grid(linestyle='-', color='0.9', zorder=1)
         ELECTRIC_PLOT.set_xticklabels(ELECTRIC_PLOT.get_xticklabels(),
                                       visible=False)
-        ELECTRIC_PLOT.set_ylabel('Electric sage, kWh')
+        ELECTRIC_PLOT.set_ylabel('Electric usage, kWh')
         
+        TEMP_PLOT.set_datelimits(start_date='2004-09-01')
         TEMP_PLOT.format_dateaxis()
         
+        PDF_FILENAME = '.'.join([path.splitext(IN_FILENAME)[0], 'pdf'])
+        FIG.savefig(PDF_FILENAME,)
         
     show()
