@@ -37,11 +37,14 @@ def get_filenames():
     return args
 
 def parse_date(packed_date):
+    print packed_date
+    print packed_date.split('-')
     packed_date = str(packed_date)
+    y, m, d = packed_date.split('-')
     return Date('D',
-                year = int(packed_date[:4]),
-                month = int(packed_date[4:6]),
-                day = int(packed_date[6:]))
+                year = int(y),
+                month = int(m),
+                day = int(d))
 
 def parse_nmsu_date(packed_date):
     m, d, y = packed_date.split('/')
@@ -88,12 +91,18 @@ def get_nm_climate(station='kabq', start_date = '20040101', end_date = 'today'):
     
 if __name__ == "__main__":
     for in_filename in get_filenames():
-        data = loadtxt(in_filename, delimiter=',')
-        dates = data[:, 0].astype(int).tolist()
+        data = loadtxt(in_filename, delimiter=',', usecols=[1, 2, 3])
+        data_file = open(in_filename)
+        dates = []
+        for row in data_file:
+            if row[0] == '#':
+                continue
+            dates.append(row.split(',')[0])
+        #dates = data[:, 0].astype(int).tolist()
         dates = [parse_date(str(d)) for d in dates]
-        ELECTRIC = time_series(masked_less(data[:, 1], 0), dates)
-        GAS = time_series(masked_less(data[:, 2], 0), dates)
-        WATER = time_series(masked_less(data[:, 3], 0), dates)
+        ELECTRIC = time_series(masked_less(data[:, 0], 0), dates)
+        GAS = time_series(masked_less(data[:, 1], 0), dates)
+        WATER = time_series(masked_less(data[:, 2], 0), dates)
         START = dates[0]
         END = dates[-1]
         CLIMATE = get_nm_climate(start_date='%i%.2i%.2i' % (START.year,
