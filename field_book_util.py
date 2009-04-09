@@ -412,6 +412,7 @@ def average_codes(in_book,
                 h_angles.append(record.north_horizontal)
                 v_angles.append(record.east_vertical)
                 distances.append(record.elevation_distance)
+                point_id = record.point_id
             elif record.dc == 'F2':
                 reverse = record.north_horizontal.decimal_degrees + 180
                 if reverse >= 360:
@@ -420,10 +421,12 @@ def average_codes(in_book,
                 v_angles.append(dd2dms(360 \
                                        - record.east_vertical.decimal_degrees))
                 distances.append(record.elevation_distance)
+                if not point_id:
+                    point_id = record.point_id
             else:
                 continue
         avg_record = SOKKIARecord(record_type = 'OBS',
-                                  point_id = record_list[0].point_id,
+                                  point_id = point_id,
                                   dc = 'F1',
                                   code = code)
         avg_record.north_horizontal, range_horizontal = avg_angles(h_angles)
