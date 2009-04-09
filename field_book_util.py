@@ -21,8 +21,33 @@ from os import name, path
 from numpy import empty, mean, ptp
 
 # Enthought library imports.
-from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, HasTraits, \
-                                 Int, List, ListStr, String, Time
+from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, \
+                                 HasTraits, Instance, Int, List, String, Time
+
+class TPSModel(HasTraits):
+    """Define total station model and specifications.""" 
+    horizontal_sd = Float(5, desc='horizontal angle standard deviation in seconds')
+    zenith_sd = Float(5, desc='zenith angle standard deviation in seconds')
+    chord_sd = Float(.003, desc='chord distance standard deviation in m')
+    chord_ppm = Float(2, desc='chord distance ppm variation')
+    model = String
+    
+    known_models = {'SET530R V33-17': {'horizontal_sd': 5,
+                                       'zenith_sd': 5,
+                                       'chord_sd': 0.002,
+                                       'chord_ppm': 2},
+                    'SET5F': {'horizontal_sd': 5,
+                              'zenith_sd': 5,
+                              'chord_sd': 0.003,
+                              'chord_ppm': 2}}
+    
+    def _model_changed(self, old, new):
+        if new in self.known_models.keys():
+            self.horizontal_sd = self.known_models[new]['horizontal_sd']
+            self.zenith_sd = self.known_models[new]['zenith_sd']
+            self.chord_sd = self.known_models[new]['chord_sd']
+            self.chord_ppm = self.known_models[new]['chord_ppm']
+    
 
 class SOKKIARecord(HasTraits):
     """Single or multiline record in a SOKKIA text fieldbook."""
@@ -70,6 +95,7 @@ class SOKKIABook(HasTraits):
     record_divider = String('-'*135)
     record_pattern = Dict
     record_list = List
+    tps_model = Instance(TPSModel)
     
     def load(self, input_filename):
         try:
@@ -159,6 +185,11 @@ class SOKKIABook(HasTraits):
                         j = record[0, self.record_pattern['North/Hor']]
                         job.job_id = j.split(':')[-1].strip()
                         self.record_list.append(job)
+                    elif record[0, 1] == 'INSTR':
+                        m = record[1, 3].split(':')[1].strip()
+                        self.tps_model = TPSModel(model = m)
+#                        self.tps_model.model = record[1,
+#                                                      3].split(':')[1].strip()
                     elif record[0, 1] == 'STN':
                         stn = Station()
                         stn.point_id = int(record[0, self.record_pattern['Pt.']])
@@ -218,17 +249,13 @@ class SOKKIABook(HasTraits):
     def export_hor_obs(self,
                        output_filename,
                        bs_station='BS_STATION',
-                       hor_offset = 0,
-                       hor_sd = 5,
-                       zenith_sd = 5,
-                       chord_sd = .003,
-                       chord_ppm = 2):
+                       hor_offset = 0):
         """Export fieldbook as Horizontal Angle Right observations in a text
         format that is compatible with the COLUMBUS network adjustment
         software."""
         out_file = open(output_filename, 'w')
         out_file.write('! Chord (Slope) Distance PPM correction\n')
-        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
+        out_file.write('$PPM_CHORDDIST; %g\n\n' % self.tps_model.chord_ppm)
         out_file.write('! ')
         cols = ['AT Station Name',
                 'TO Station Name',
@@ -263,30 +290,25 @@ class SOKKIABook(HasTraits):
                 row.append('%.3i%.2i%07.4f' % (hor.degrees,
                                                hor.minutes,
                                                hor.seconds))
-                row.append(hor_sd)
+                row.append('%g' % self.tps_model.horizontal_sd)
                 row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
                                                record.east_vertical.minutes,
                                                record.east_vertical.seconds))
-                row.append(zenith_sd)
+                row.append('%g' % self.tps_model.zenith_sd)
                 row.append(record.elevation_distance)
-                row.append(chord_sd)
+                row.append('%g' % self.tps_model.chord_sd)
                 row.append(instrument_height)
                 row.append(target_height)
                 rows.append(row)
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
         
-    def export_direction_obs(self,
-                             output_filename,
-                             direction_sd = 5,
-                             zenith_sd = 5,
-                             chord_sd = .003,
-                             chord_ppm = 2):
+    def export_direction_obs(self, output_filename):
         """Export fieldbook as direction observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
         out_file.write('! Chord (Slope) Distance PPM correction\n')
-        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
+        out_file.write('$PPM_CHORDDIST; %g\n\n' % self.tps_model.chord_ppm)
         out_file.write('! ')
         cols = ['AT Station Name',
                 'TO Station Name',
@@ -315,13 +337,13 @@ class SOKKIABook(HasTraits):
                 row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
                                                record.north_horizontal.minutes,
                                                record.north_horizontal.seconds))
-                row.append(direction_sd)
+                row.append('%g' % self.tps_model.horizontal_sd)
                 row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
                                                record.east_vertical.minutes,
                                                record.east_vertical.seconds))
-                row.append(zenith_sd)
+                row.append('%g' % self.tps_model.zenith_sd)
                 row.append(record.elevation_distance)
-                row.append(chord_sd)
+                row.append('%g' % self.tps_model.chord_sd)
                 row.append(instrument_height)
                 row.append(target_height)
                 row.append(job)
@@ -329,17 +351,12 @@ class SOKKIABook(HasTraits):
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
 
-    def export_azimuth_obs(self,
-                             output_filename,
-                             direction_sd = 5,
-                             zenith_sd = 5,
-                             chord_sd = .003,
-                             chord_ppm = 2):
+    def export_azimuth_obs(self, output_filename):
         """Export fieldbook as azimuth observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
         out_file.write('! Chord (Slope) Distance PPM correction\n')
-        out_file.write('$PPM_CHORDDIST; %s\n\n' % chord_ppm)
+        out_file.write('$PPM_CHORDDIST; %g\n\n' % self.tps_model.chord_ppm)
         out_file.write('! ')
         cols = ['AT Station Name',
                 'TO Station Name',
@@ -365,13 +382,13 @@ class SOKKIABook(HasTraits):
                 row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
                                                record.north_horizontal.minutes,
                                                record.north_horizontal.seconds))
-                row.append(direction_sd)
+                row.append('%g' % self.tps_model.horizontal_sd)
                 row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
                                                record.east_vertical.minutes,
                                                record.east_vertical.seconds))
-                row.append(zenith_sd)
+                row.append('%g' % self.tps_model.zenith_sd)
                 row.append(record.elevation_distance)
-                row.append(chord_sd)
+                row.append('%g' % self.tps_model.chord_sd)
                 row.append(instrument_height)
                 row.append(target_height)
                 rows.append(row)
