@@ -18,7 +18,7 @@ from optparse import OptionParser
 from os import name, path
 
 # Numpy imports.
-from numpy import asarray, empty, ma, mean, ptp
+from numpy import empty, mean, ptp
 
 # Enthought library imports.
 from enthought.traits.api import Date, Dict, Bool, Enum, File, Float, HasTraits, \
@@ -401,19 +401,17 @@ def average_codes(in_book,
         if record.record_type == 'OBS':
             tmp[record.code] = 1
     code_list = tmp.keys()
-    record_codes = [rl.code for rl in in_book.record_list]
     for code in code_list:
-        masked_codes =  ma.masked_not_equal(ma.asarray(record_codes), code)
-        masked_index = ma.arange(masked_codes.size)
-        masked_index.mask = masked_codes.mask
-        record_list = asarray(in_book.record_list)[masked_index.compressed()]
-        
         h_angles = []
         v_angles = []
-        for record in record_list:
+        distances = []
+        for record in in_book.record_list:
+            if code != record.code:
+                continue 
             if record.dc == 'F1':
                 h_angles.append(record.north_horizontal)
                 v_angles.append(record.east_vertical)
+                distances.append(record.elevation_distance)
             elif record.dc == 'F2':
                 reverse = record.north_horizontal.decimal_degrees + 180
                 if reverse >= 360:
@@ -421,9 +419,9 @@ def average_codes(in_book,
                 h_angles.append(dd2dms(reverse))
                 v_angles.append(dd2dms(360 \
                                        - record.east_vertical.decimal_degrees))
+                distances.append(record.elevation_distance)
             else:
                 continue
-        distances = [r.elevation_distance for r in record_list]
         avg_record = SOKKIARecord(record_type = 'OBS',
                                   point_id = record_list[0].point_id,
                                   dc = 'F1',
@@ -432,7 +430,6 @@ def average_codes(in_book,
         avg_record.east_vertical, range_vertical = avg_angles(v_angles)
         avg_record.elevation_distance = mean(distances)
         range_distance = ptp([distances])
-        
         
         d, m, s = horizontal_tol.split(':')
         angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
