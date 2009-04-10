@@ -188,8 +188,6 @@ class SOKKIABook(HasTraits):
                     elif record[0, 1] == 'INSTR':
                         m = record[1, 3].split(':')[1].strip()
                         self.tps_model = TPSModel(model = m)
-#                        self.tps_model.model = record[1,
-#                                                      3].split(':')[1].strip()
                     elif record[0, 1] == 'STN':
                         stn = Station()
                         stn.point_id = int(record[0, self.record_pattern['Pt.']])
@@ -405,78 +403,88 @@ def get_filenames():
         args = glob(args[0])
     return args
 
-def average_codes(in_book,
-                  horizontal_tol='0:0:30.0', vertical_tol='0:0:30.0',
+def average_code_obs(in_book,
+                  horizontal_tol='0:1:0.0', vertical_tol='0:1:0.0',
                   distance_tol=0.01):
     """Average observations with the same code."""
     out_book = copy(in_book)
-    out_book.record_list = [r for r in in_book.record_list \
-                            if r.record_type != 'OBS']
     out_book.point_count = 0
-    tmp = {}
+    out_book.record_list = []
+    
+    code_dict = {}
+    sorted_codes = []
     for record in in_book.record_list:
-        if record.record_type == 'OBS':
-            tmp[record.code] = 1
-    code_list = tmp.keys()
-    for code in code_list:
-        h_angles = []
-        v_angles = []
-        distances = []
-        for record in in_book.record_list:
-            if code != record.code:
-                continue 
-            if record.dc == 'F1':
-                h_angles.append(record.north_horizontal)
-                v_angles.append(record.east_vertical)
-                distances.append(record.elevation_distance)
-                point_id = record.point_id
-            elif record.dc == 'F2':
-                reverse = record.north_horizontal.decimal_degrees + 180
-                if reverse >= 360:
-                    reverse -= 360
-                h_angles.append(dd2dms(reverse))
-                v_angles.append(dd2dms(360 \
-                                       - record.east_vertical.decimal_degrees))
-                distances.append(record.elevation_distance)
-                if not point_id:
-                    point_id = record.point_id
-            else:
-                continue
-        avg_record = SOKKIARecord(record_type = 'OBS',
-                                  point_id = point_id,
-                                  dc = 'F1',
-                                  code = code)
-        avg_record.north_horizontal, range_horizontal = avg_angles(h_angles)
-        avg_record.east_vertical, range_vertical = avg_angles(v_angles)
-        avg_record.elevation_distance = mean(distances)
-        range_distance = ptp([distances])
-        
-        d, m, s = horizontal_tol.split(':')
-        angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
-        if min([360 - range_horizontal.decimal_degrees,
-               range_horizontal.decimal_degrees]) > angle_tol.decimal_degrees:
-            print u'WARNING: Horizontal angle tolerance (%s) exceeded.' \
-                    % angle_tol
-            print u'%s HAR difference: %s\n' % (avg_record.code,
-                                                range_horizontal)
-        d, m, s = vertical_tol.split(':')
-        angle_tol = AngleDMS(degrees=int(d), minutes=int(m), seconds=float(s))
-        if range_vertical.decimal_degrees > angle_tol.decimal_degrees:
-            print u'WARNING: Zenith angle tolerance (%s) exceeded.' % angle_tol
-            print u'%s ZA difference: %s\n' % (avg_record.code, range_vertical)
-        if range_distance > distance_tol:
-            print 'WARNING: Slope distance tolerance (%.4f) exceeded.' \
-                   % distance_tol
-            print '%s S difference: %.4f\n' % (avg_record.code, range_distance)
-        out_book.record_list.append(avg_record)
-        out_book.point_count += 1
+        if record.code not in sorted_codes:
+            code_dict[record.code] = [record]
+            sorted_codes.append(record.code)
+        else:
+            code_dict[record.code].append(record)
+    
+    for code in sorted_codes:
+        code_records = code_dict[code]
+        if code_records[0].record_type == 'OBS':
+            avg_record = SOKKIARecord(record_type = code_records[0].record_type,
+                                      point_id = code_records[0].point_id,
+                                      dc = 'F1',
+                                      code = code)
+            h_angles = []
+            v_angles = []
+            distances = []
+            for record in code_records:
+                if record.dc == 'F1':
+                    h_angles.append(record.north_horizontal)
+                    v_angles.append(record.east_vertical)
+                    distances.append(record.elevation_distance)
+                elif record.dc == 'F2': 
+                    reverse = record.north_horizontal.decimal_degrees + 180
+                    if reverse >= 360:
+                        reverse -= 360
+                    h_angles.append(dd2dms(reverse))
+                    v_angles.append(dd2dms(360 \
+                                           - record.east_vertical.decimal_degrees))
+                    distances.append(record.elevation_distance)
+                
+            avg_record.north_horizontal, range_horizontal = avg_angles(h_angles)
+            avg_record.east_vertical, range_vertical = avg_angles(v_angles)
+            avg_record.elevation_distance = mean(distances)
+            range_distance = ptp(distances)
+            
+            d, m, s = horizontal_tol.split(':')
+            angle_tol = AngleDMS(degrees=int(d),
+                                 minutes=int(m),
+                                 seconds=float(s))
+            if min([360 - range_horizontal.decimal_degrees,
+                   range_horizontal.decimal_degrees]) > angle_tol.decimal_degrees:
+                print u'WARNING: Horizontal angle tolerance (%s) exceeded.' \
+                        % angle_tol
+                print u'%s HAR difference: %s\n' % (avg_record.code,
+                                                    range_horizontal)
+            d, m, s = vertical_tol.split(':')
+            angle_tol = AngleDMS(degrees=int(d),
+                                 minutes=int(m),
+                                 seconds=float(s))
+            if range_vertical.decimal_degrees > angle_tol.decimal_degrees:
+                print u'WARNING: Zenith angle tolerance (%s) exceeded.' % angle_tol
+                print u'%s ZA difference: %s\n' % (avg_record.code,
+                                                   range_vertical)
+            if range_distance > distance_tol:
+                print 'WARNING: Slope distance tolerance (%.4f) exceeded.' \
+                       % distance_tol
+                print '%s S difference: %.4f\n' % (avg_record.code,
+                                                   range_distance)
+            out_book.record_list.append(avg_record)
+            out_book.point_count += 1
+        else:
+            for record in code_records:
+                out_book.record_list.append(record)
+                out_book.point_count += 1
     return out_book
 
 if __name__ == '__main__':
     for in_filename in get_filenames():
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
-        AVG_BOOK = average_codes(BOOK)
+        AVG_BOOK = average_code_obs(BOOK)
 #        AVG_BOOK.export_hor_obs('%s.obs' % \
 #                                path.splitext(path.basename(in_filename))[0],
 #                                bs_station='m3a',
