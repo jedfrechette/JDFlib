@@ -1,0 +1,168 @@
+#!/bin/sh
+
+############################################################################
+#
+# MODULE:       r.closing
+#
+# AUTHOR(S):    Jed Frechette, jdfrech@unm.edu
+#		        University of New Mexico Lidar Lab
+#
+# PURPOSE:	Generate a binary map with from an input using a morphological
+#           closing.
+#
+# VERSION:	1 developed over GRASS 6.4.0-RC4 
+#
+# COPYRIGHT:    (c) 2009 University of New Mexico Board of Regents
+#
+# NOTES:	This program is free software under the GNU General Public
+#           License (>=v2). Read the file COPYING that comes with GRASS
+#           for details.
+#
+#############################################################################
+
+# NOTES:
+#
+# 1. Requires nnbathy executable v 1.75 or later. Follow the instruction in
+#    html manual page to obtain it.
+#
+# 2. When creating the input raster map, make sure it's extents cover
+#    your whole region of interest, the cells you wish to interplate on are
+#    NULL, and the resolution is correct. Same as most GRASS raster modules
+#    this one is region sensitive too.
+
+#%Module
+#%  description: Generate a binary map from an input map using a morphological closing.
+#%END
+
+#%option
+#% key: input
+#% type: string
+#% gisprompt: old,cell,raster
+#% description: The raster map to close
+#% required : yes
+#%END
+
+#%option
+#% key: output
+#% gisprompt: new,cell,raster
+#% type: string
+#% description: Name of the output raster map
+#% required : yes
+#%END
+
+#%option
+#% key: distance
+#% type: integer
+#% description: Distance used for dilation and erosion
+#% required : yes
+#%END
+
+
+# called from GRASS?
+if test "$GISBASE" = ""; then
+    echo
+    echo "ERROR: You must be in GRASS GIS to run this program." 1>&2
+    echo
+    exit 1
+fi
+
+if [ "$1" != "@ARGS_PARSED@" ] ; then
+  exec g.parser "$0" "$@"
+fi
+
+# set up temporary files
+TMP="`g.tempfile pid=$$`"
+if [ $? -ne 0 ] || [ -z "$TMP" ] ; then
+    echo
+    echo "ERROR: Unable to create temporary files." 1>&2
+    echo
+    exit 1
+fi
+
+PROG=`basename $0`
+
+# define cleanup procedure
+proc_cleanup()
+{
+ # Reset traps before normal script termination to avoid bogus ERROR message, as
+ # we put a trap on signal 0.
+ trap - 0 2 3 15 
+ echo 'Cleaning up temporary maps'
+ g.remove --quiet rast="$$.buffer,$$.eroded_nulls,$$.nulls,$$.buffered_nulls"
+ rm -f "$TMP" "$TMP.${PROG}.rules"
+}
+
+# define run-time error handling procedure
+proc_runtime_error()
+{
+ echo
+ echo "ERROR: There was an error at the script's run time. Please try to debug the problem if you can and contact jdfrech@unm.edu." 1>&2
+ echo
+ proc_cleanup
+ exit 1
+}
+
+# define user-break procedure
+proc_user_break()
+{
+ echo
+ echo "User break!"
+ echo
+ #proc_cleanup
+ exit 1
+}
+
+# set trap for when script terminates
+trap "proc_runtime_error" 0
+
+# trap user break
+trap "proc_user_break" 2 3 15
+
+# assign main variables from user's input
+INPUT="$GIS_OPT_INPUT"
+OUTPUT="$GIS_OPT_OUTPUT"
+DISTANCE="$GIS_OPT_DISTANCE"
+
+
+
+### DO IT ###
+
+set -e	# Make script terminate (ie. emit signal 0) if any statement returns a
+	# non-0 value. Then we trap signal 0, which lets handle such errors.
+	# However, the trap on signal 0 must be reset before normal script
+	# termination to avoid a bogus ERROR message then - this is done in the
+	# cleanup procedure.
+
+# Dilate the input map by the specified distance.
+r.buffer -z input="${INPUT}" output="$$.buffer" distances="${DISTANCE}"
+
+# Create binary map of all remaining null cells.
+r.mapcalc "$$.eroded_nulls"="isnull($$.buffer)"
+
+# Dilate the null map by the specified distance.
+r.buffer -z input="$$.eroded_nulls" output="$$.buffered_nulls" distances="${DISTANCE}"
+
+# Reclassify as a binary map
+echo "1 2 = 1" > "$TMP.${PROG}.rules"
+echo end >> "$TMP.${PROG}.rules"
+
+r.reclass input="$$.buffered_nulls" output="$$.nulls" rules="$TMP.${PROG}.rules"
+r.mapcalc "${OUTPUT}"="isnull($$.nulls)"
+
+# store comand history in raster's metadata
+
+r.support map=${OUTPUT} history=""
+r.support map=${OUTPUT} history="script syntax:"
+r.support map=${OUTPUT} history=""
+r.support map=${OUTPUT} history="r.closing input=${INPUT} output=${OUTPUT} distance=${DISTANCE}"
+r.support map=${OUTPUT} history=""
+
+### ALL DONE ###
+
+proc_cleanup
+
+echo
+
+echo "All done." 1>&2
+echo
+
