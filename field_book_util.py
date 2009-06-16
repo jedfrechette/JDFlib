@@ -499,7 +499,7 @@ class SOKKIABook(HasTraits):
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
 
-    def export_azimuth_obs(self, output_filename):
+    def export_azimuth_obs(self, output_filename, az_offset=0):
         """Export fieldbook as azimuth observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
@@ -527,9 +527,16 @@ class SOKKIABook(HasTraits):
                 row = ['$AZ_COMPACT']
                 row.append(at)
                 row.append(record.code)
-                row.append('%.3i%.2i%07.4f' % (record.north_horizontal.degrees,
-                                               record.north_horizontal.minutes,
-                                               record.north_horizontal.seconds))
+                if az_offset == 0:
+                    az = record.north_horizontal
+                else:
+                    az = record.north_horizontal.decimal_degrees + az_offset
+                    if az >= 360:
+                        az -= 360
+                    az = dd2dms(az)
+                row.append('%.3i%.2i%07.4f' % (az.degrees,
+                                               az.minutes,
+                                               az.seconds))
                 row.append('%g' % self.tps_model.horizontal_sd)
                 row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
                                                record.east_vertical.minutes,
@@ -643,10 +650,11 @@ if __name__ == '__main__':
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
         AVG_BOOK = average_code_obs(BOOK)
-        AVG_BOOK.export_hor_obs('%s.obs' % \
-                                path.splitext(path.basename(in_filename))[0],
-                                bs_station='north')
-#        AVG_BOOK.export_azimuth_obs('%s.obs' % \
-#                                    path.splitext(path.basename(in_filename))[0])
+#        AVG_BOOK.export_hor_obs('%s.obs' % \
+#                                path.splitext(path.basename(in_filename))[0],
+#                                bs_station='north')
+        AVG_BOOK.export_azimuth_obs('%s.obs' % \
+                                    path.splitext(path.basename(in_filename))[0],
+                                    az_offset=3.7)
 #        AVG_BOOK.export_direction_obs('%s.obs' % \
 #                                      path.splitext(path.basename(in_filename))[0])
