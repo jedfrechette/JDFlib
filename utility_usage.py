@@ -18,9 +18,6 @@ from StringIO import StringIO
 from numpy import loadtxt
 from numpy.ma import masked_less
 
-# Matplotlib imports
-from matplotlib.pyplot import show
-
 # TimeSeries imports
 from scikits.timeseries import Date, time_series, tsfromtxt
 from scikits.timeseries.lib.interpolate import backward_fill
@@ -158,4 +155,4 @@ if __name__ == "__main__":
         PDF_FILENAME = '.'.join([path.splitext(IN_FILENAME)[0], 'pdf'])
         FIG.savefig(PDF_FILENAME,)
         
-    show()
+    tpl.show()
