@@ -199,7 +199,11 @@ def get_filenames():
     (opts, args) = parser.parse_args()
     if os.name == 'nt':
         args = glob(args[0])
-    return args[0], args[1], args[2]
+    if len(args) == 3:
+        return args[0], args[1], args[2]
+    else:
+        parser.print_help()
+        sys.exit()
 
 def load_input(filename):
     """Load data from input file."""
