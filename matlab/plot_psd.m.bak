@@ -1,0 +1,55 @@
+function plot_psd(psdFraction)
+% Generate a standard partical size distribution (PSD) plot.
+%
+% plot_psd(psdFraction)
+%
+% Parameters:
+%   psdFraction = An array containing the depth of the lower boundary and the
+%                 fraction of material in various size classes for each
+%                 horizon. The first column contains the depth of the lower
+%                 boundary of each horizon below the surface. Each additional
+%                 column contains the fraction of material (0-1) in a specific
+%                 size class. These columns should typically be arranged in
+%                 order from smallest to largest or largest to smallest size
+%                 classes. (REQUIRED)
+%
+% It is assumed that the fraction of material in all size classes will sum to 1
+% for each horizon. Therefore, the percentage of material up to and includeing
+% the class in the last column is not ploted as it should be a vertical line at
+% 100%. However, the fractions may not sum to 1 for a number of reasons
+% including rounding errors. In this case the plot is still generated but a
+% warning is issued giving the actual sum of the fractions.
+
+
+% Author: Jed Frechette
+% Date: 3 April 2006
+
+[nRows, nCols] = size(psdFraction);
+sumFraction = cumsum(psdFraction(:,2:nCols), 2);
+[nHorz, nClass] = size(sumFraction);
+depth = psdFraction(:, 1);
+
+% Print a warning for all horizons where the fractions do not sum to 1.
+for ii = 1:nHorz
+    rowSum = sumFraction(ii, nClass);
+    if rowSum ~= 1
+        warning(['The fractions in the horizon with a lower boundary at ',...
+                 mat2str(psdFraction(ii, 1)),...
+                 ' sum to ', mat2str(rowSum), '.'])
+    end
+end
+
+% Generate the plot.
+for ii = 1:(nClass - 1)
+    [stairDepth(:, ii), stairFraction(:, ii)] = stairs(depth,...
+                                                       sumFraction(:, ii));
+end
+stairDepth = [zeros(1, nClass - 1); stairDepth(1, :); stairDepth];
+stairDepth = stairDepth(1:(2 * nHorz), :);
+stairFraction = [stairFraction; stairFraction((2 * nHorz) - 1, :)];
+
+clf
+plot(100 * stairFraction, stairDepth)
+axis([0, 100, 0, max(depth)], 'ij')
+ylabel('Depth');
+xlabel('Percent');
