@@ -499,7 +499,7 @@ class SOKKIABook(HasTraits):
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
 
-    def export_azimuth_obs(self, output_filename, az_offset=0):
+    def export_azimuth_obs(self, output_filename, az_offset=0, za_offset=0):
         """Export fieldbook as azimuth observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
@@ -534,13 +534,18 @@ class SOKKIABook(HasTraits):
                     if az >= 360:
                         az -= 360
                     az = dd2dms(az)
+                if za_offset == 0:
+                    za = record.east_vertical
+                else:
+                    za = record.east_vertical.decimal_degrees + za_offset
+                    za = dd2dms(za)
                 row.append('%.3i%.2i%07.4f' % (az.degrees,
                                                az.minutes,
                                                az.seconds))
                 row.append('%g' % self.tps_model.horizontal_sd)
-                row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
-                                               record.east_vertical.minutes,
-                                               record.east_vertical.seconds))
+                row.append('%.3i%.2i%07.4f' % (za.degrees,
+                                               za.minutes,
+                                               za.seconds))
                 row.append('%g' % self.tps_model.zenith_sd)
                 row.append(record.elevation_distance)
                 row.append('%g' % self.tps_model.chord_sd)
