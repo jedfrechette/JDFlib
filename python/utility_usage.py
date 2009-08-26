@@ -112,45 +112,45 @@ if __name__ == "__main__":
         FIG = tpl.tsfigure(figsize=(10, 7))
         FIG.subplots_adjust(hspace = 0.1)
         
-        TEMP_PLOT = FIG.add_tsplot(313)
+        GAS_PLOT = FIG.add_tsplot(313)
+        GAS_PLOT.tsplot(backward_fill(GAS), zorder=20)
+        GAS_PLOT.set_ylabel('Gas usage, therms')
+        GAS_PLOT.grid(linestyle='-', color='0.9', zorder=0)
+        TEMP_PLOT = GAS_PLOT.add_yaxis(position='right')
         TEMP_PLOT.tsplot(MIN_TEMP, color='0.5', zorder=10)
         TEMP_PLOT.tsplot(MAX_TEMP, color='0.5', zorder=10)
-        GAS_PLOT = TEMP_PLOT.add_yaxis(position='right')
-        GAS_PLOT.tsplot(backward_fill(GAS), zorder=10)
-        TEMP_PLOT.grid(linestyle='-', color='0.9', zorder=0)
         TEMP_PLOT.set_ylabel(u'Temperature range, \u2109F')
-        GAS_PLOT.set_ylabel('Gas usage, therms')
         
-        PRECIP_PLOT = FIG.add_tsplot(311, sharex=TEMP_PLOT)
-        PRECIP_PLOT.tsplot(ACCUM_PRECIP, color='0.5', zorder=10)
-        WATER_PLOT = PRECIP_PLOT.add_yaxis(position='right')
-        WATER_PLOT.tsplot(backward_fill(WATER*748), zorder=10)
-        PRECIP_PLOT.grid(linestyle='-', color='0.9', zorder=1)
-        PRECIP_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
-                                    visible=False)
-        WATER_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
+        WATER_PLOT = FIG.add_tsplot(311, sharex=GAS_PLOT)
+        WATER_PLOT.tsplot(backward_fill(WATER*748), zorder=20)
+        WATER_PLOT.grid(linestyle='-', color='0.9', zorder=1)
+        WATER_PLOT.set_xticklabels(WATER_PLOT.get_xticklabels(),
                                    visible=False)
-        PRECIP_PLOT.set_ylabel('Precipitation, in.')
         WATER_PLOT.set_ylabel('Water usage, gal.')
         WATER_PLOT.set_title('Utility usage for 1613 Columbia Dr. SE, ' \
                              'Albuquerque, NM\n' \
                              'Usage is given per billing period (~30 days).\n' \
                              'Daily weather data from Albuquerque International ' \
                              'Airport (KABQ)')
-        
+        PRECIP_PLOT = WATER_PLOT.add_yaxis(position='right')
+        PRECIP_PLOT.tsplot(ACCUM_PRECIP, color='0.5', zorder=10)
+        PRECIP_PLOT.set_ylabel('Precipitation, in.')
+        PRECIP_PLOT.set_xticklabels(PRECIP_PLOT.get_xticklabels(),
+                                    visible=False)
+       
         #TODO: Prevent the y tick labels from overlapping the other plots.
         #TODO: Find local station with solar radiation (City of Albuquerque
         #      stations from NMSU supposedly have the data but may have been
         #      discontinued.)
-        ELECTRIC_PLOT = FIG.add_tsplot(312, sharex=TEMP_PLOT)
+        ELECTRIC_PLOT = FIG.add_tsplot(312, sharex=GAS_PLOT)
         ELECTRIC_PLOT.tsplot(backward_fill(ELECTRIC), zorder=10)
         ELECTRIC_PLOT.grid(linestyle='-', color='0.9', zorder=1)
         ELECTRIC_PLOT.set_xticklabels(ELECTRIC_PLOT.get_xticklabels(),
                                       visible=False)
         ELECTRIC_PLOT.set_ylabel('Electric usage, kWh')
         
-        TEMP_PLOT.set_datelimits(start_date='2004-09-01')
-        TEMP_PLOT.format_dateaxis()
+        GAS_PLOT.set_datelimits(start_date='2004-09-01')
+        GAS_PLOT.format_dateaxis()
         
         PDF_FILENAME = '.'.join([path.splitext(IN_FILENAME)[0], 'pdf'])
         FIG.savefig(PDF_FILENAME,)
