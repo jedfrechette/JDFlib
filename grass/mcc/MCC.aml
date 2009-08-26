@@ -1,0 +1,701 @@
+/*===================================================================================
+/*  USDA Forest Service - Rocky Mountain Research Station - FSL. Moscow, ID
+/*===================================================================================
+/*  Program: MCC.AML
+/*  Purpose: Multiscale Curvature Classification for classification of ground returns 
+/*           with an automated tiling function.
+/*===================================================================================
+/*  Usage: MCC <INCOVER> <OUTCOVER> <ELEVATION ITEM> <POSTSPACING> {CURVATURE} {COLUMNS-X} {COLUMNS-Y}
+/*
+/*  Arguments: INCOVER - Point coverage of LiDAR points
+/*             OUTCOVER - Coverage of classified LiDAR ground returns
+/*             ELEVATION ITEM - Info item in in-coverage containing elevation value.
+/*             POSTSPACING - Nominal post spacing of LiDAR data.
+/*             CURVATURE - Coefficent defining curvature threshold.
+/*             DIV-X - Number of divisions on X plane
+/*             DIV-Y - Number of divisions on Y plane
+/*===================================================================================
+/*  Notes: To choose the number of rows and columns divide the total number of
+/*         points in the in cover by the total number of tiles, there should
+/*         be no more than 400,000 point in any given tile. This is to improve
+/*         processing speed and accommodate the spline fit.
+/*
+/*  Scale Domain 1 parameters - cellsize 1 - curvature threshold 0.2 - Smoothing
+/*  Scale Domain 2 parameters - cellsize 2 - curvature threshold 0.3 - Smoothing
+/*  Scale Domain 3 parameters - cellsize 3 - curvature threshold 0.4 - Smoothing
+/*===================================================================================
+/*  Input:   LiDAR point coverage with elevation (z) values
+/*  Output:  Coverage of classified LiDAR ground returns
+/*===================================================================================
+/*  History: Jeffrey Evans - Landscape Ecologist
+/*           01/30/05 - Original coding
+/*           11/01/06 - Revised
+/*           1221 South Main, Moscow, ID 83843
+/*           (208) 882-3557
+/*           jevans02@fs.fed.us
+/*===================================================================================
+/*  References:
+/*  
+/*  Evans, J.S, and Hudak, A.T., In Press. A Multiscale Curvature Algorithm for 
+/*  Classifying Discrete Return LiDAR in Forested Environments. IEEE Transactions 
+/*  on Geoscience and Remote Sensing.
+/*
+/*  R.A. Haugerud and D. J. Harding, "Some Algorithms for Virtual Deforestation
+/*  (VDF) of Lidar Topographic Survey Data," International Archives of
+/*  Photogrammetry and Remote Sensing, Graz, Austria, vol. XXXIV-3/W4, pp. 211-
+/*  217, 2001. URL- http://pugetsoundlidar.ess.washington.edu/vdf4.pdf
+/*
+/*  Kraus, K., Pfeifer, N., 1998. Determination of Terrain Models in Wooded Areas
+/*  With Airborne Laser Scanner Data. ISPRS Journal of Photogrammetry and Remote
+/*  Sensing v.53, pp 193-203
+/*===================================================================================
+&severity &error &routine bailout
+&args incov outcov item ps cv Xdiv Ydiv
+
+&if [show PROGRAM] <> ARC &then
+  &do
+    &type Can Only Be run From ARCINFO
+       &type Please re-run mcc
+     &end
+
+&call init
+&call tile
+&call tileloop
+&call cleanup
+
+&return
+
+/************************************************************************************
+&routine init
+/************************************************************************************
+
+&if [NULL %incov%] = .TRUE. &then
+  &return &inform Usage: mcc <INCOVER> <OUTCOVER> <ELEVATION ITEM> <POSTSPACING> {CURVATURE} {COLUMNS-X} {COLUMNS-Y}
+
+&if [NULL %outcov%] = .TRUE. &then
+  &return &inform Usage: mcc <INCOVER> <OUTCOVER> <ELEVATION ITEM> <POSTSPACING> {CURVATURE} {COLUMNS-X} {COLUMNS-Y}
+
+&if [NULL %item%] = .TRUE. &then
+  &return &inform Usage: mcc <INCOVER> <OUTCOVER> <ELEVATION ITEM> <POSTSPACING> {CURVATURE} {COLUMNS-X} {COLUMNS-Y}
+
+&if [NULL %ps%] = .TRUE. &then
+
+  &return &inform Usage: mcc <INCOVER> <OUTCOVER> <ELEVATION ITEM> <POSTSPACING> {CURVATURE} {COLUMNS-X} {COLUMNS-Y}
+
+&if [exists %incov% -point] = .FALSE. &then
+  &return &inform Coverage [upcase %incov%] does not exist!
+
+&if [exists %outcov% -point] = .TRUE. &then
+  &return &inform Coverage [upcase %outcov%] already exist!
+
+&if [iteminfo %incov%.pat -info %item% -exists] = .FALSE. &then
+&return &inform INFO ITEM [upcase %item%] DOES NOT EXIST!
+
+&type /& ERROR CHECKING AND SETTING UP MODEL PARAMETERS /&
+
+&s tmp1 [scratchname -prefix xx1] /*Gridded point coverage
+&s tmp2 [scratchname -prefix xx2] /*Tmp query point coverage
+&s tmp3 [scratchname -prefix xx3] /*Surface elev grid at each itr
+&s tmp4 [scratchname -prefix xx4] /*Focalmean at each itr
+&s tmp5 [scratchname -prefix xx5] /*Fishnet
+&s tmp6 [scratchname -prefix xx6] /*Processing Tile
+&s tmp7 [scratchname -prefix xx7] /*Master Processing Tiles
+&s tmp8 [scratchname -prefix xx8] /*Tmp grid extent
+&s tmp9 [scratchname -prefix xx9]
+
+&if [exist %tmp1% -point] &then kill %tmp1% all
+&if [exist %tmp2% -point] &then kill %tmp2% all
+&if [exist %tmp3% -grid] &then kill %tmp3% all
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+&if [exist %tmp5% -poly] &then kill %tmp5% all
+&if [exist %tmp6% -poly] &then kill %tmp6% all
+&if [exist %tmp7% -poly] &then kill %tmp7% all
+&if [exist %tmp8% -poly] &then kill %tmp8% all
+&if [exist %tmp9% -point] &then kill %tmp9% all
+
+&if [NULL %Xdiv%] = .TRUE. &then
+  &s Xdiv = 5
+&else &do
+  &s Xdiv = %Xdiv%
+&end
+
+&if [NULL %Ydiv%] = .TRUE. &then
+  &s Ydiv = 5
+&else &do
+  &s Ydiv = %Ydiv%
+&end
+
+&describe %incov%
+&set ntiles = [CAL %Ydiv% * %Xdiv%]
+&set ntp = [CAL %DSC$POINTS% / %ntiles%]
+  &if %ntp% > 500000 &then
+  &return &inform NEED TO INCREASE NUMBER OF TILES TO ACCOMMODATE SPLINE FITS
+
+&s starttime1 = [date -time]
+
+&if [exists mcctmp.aml -file] &then &do
+  &sys del mcctmp.aml
+  &sys echo APPEND %outcov% point all >> mcctmp.aml
+&end
+&else &do
+  &type  CREATING MERGE FILE
+  &sys echo APPEND %outcov% point all >> mcctmp.aml
+&end
+
+&if [NULL %cv%] or %cv%_ = #_ &then
+  &s cv = 0.2
+&else &do
+  &s cv = %cv%
+&end
+   &set h = [CAL %ps% / 2]
+
+   &set m1cs = [CAL %ps% - %h%]
+   &set m1cv = %cv%
+   &set m2cs = %ps%
+   &set m2cv = [CAL %m1cv% + %cv%]
+   &set m3cs = [CAL %ps% + %h%]
+   &set m3cv = [CAL %m2cv% + %cv%]
+   &set m1w = 12
+   &set m2w = 18
+   &set m3w = 24
+
+   &s PointsLostTolerance = 0.1
+   &s MaxIterations = 20
+   &s th = 30
+   &s logstart = [date -time]
+
+&sys echo ******************************************************* >> MCCLog_%incov%
+&sys echo MULTISCALE CURVATURE CLASSIICATION STARTED AT - %logstart% >> MCCLog_%incov%
+&sys echo IN DATASET %incov% >> MCCLog_%incov%
+&sys echo OUT DATASET %incov% >> MCCLog_%incov%
+&sys echo   SCALE DOMAIN 1 PARAMETERS >> MCCLog_%incov%
+&sys echo       CURVATURE THRESHOLD -  %m1cv% >> MCCLog_%incov%
+&sys echo       SMOOTHING -  %m1w% >> MCCLog_%incov%
+&sys echo       SURFACE CELL SIZE -  %m1cs% >> MCCLog_%incov%
+&sys echo   SCALE DOMAIN >> MCCLog_%incov%
+&sys echo       CURVATURE THRESHOLD -  %m2cv% >> MCCLog_%incov%
+&sys echo       SMOOTHING -  %m2w% >> MCCLog_%incov%
+&sys echo       SURFACE CELL SIZE -  %m2cs% >> MCCLog_%incov%
+&sys echo   SCALE DOMAIN >> MCCLog_%incov%
+&sys echo       CURVATURE THRESHOLD -  %m3cv% >> MCCLog_%incov%
+&sys echo       SMOOTHING -  %m2w% >> MCCLog_%incov%
+&sys echo       SURFACE CELL SIZE -  %m3cs% >> MCCLog_%incov%
+
+&messages &off
+&return
+/************************************************************************************
+&routine tile
+/************************************************************************************
+
+&type /& CREATING PROCESSING BLOCKS /&
+
+&describe %incov%
+
+&s xmin %DSC$XMIN%
+&s xmax %DSC$XMAX%
+&s ymin %DSC$YMIN%
+&s ymax %DSC$YMAX%
+
+GENERATE %tmp7%
+FISHNET
+   %XMIN%, %YMIN%
+   %XMIN%, [calc %YMIN% + 0.001]
+   0
+   %ydiv%,%xdiv%
+   %XMAX%, %YMAX%
+QUIT
+BUILD %tmp7%
+&describe %tmp7%
+&if %DSC$POLYGONS% > 500 &then &do
+  &return &inform TOO MANY TILES PLEASE SET DIVISION COEFFICENTS TO < 10x10 IN ARGUMENTS
+&end
+&type /& [CAL %DSC$POLYGONS% - 1] TILES CREATED /&
+
+&return
+/************************************************************************************
+&routine tileloop
+/************************************************************************************
+&describe %tmp7%
+        &sv count = %DSC$POLYGONS%
+&do i = 1 &to [CAL %count% - 1]
+&set i = [cal %i% + 1]
+
+&type /&   *****************************************
+&type          PROCESSING TILE [CAL %i% - 1] of [CAL %count% - 1]
+&type    ***************************************** /&
+
+RESELECT %tmp7% %tmp6% POLY # POLY
+    RESELECT %tmp7%# = %i%
+    ~
+    NO
+    NO
+BUILD %tmp6%
+CLIP %incov% %tmp6% %tmp1% POINT
+
+&describe %tmp1%
+&type /& THERE ARE %DSC$POINTS% POINTS IN TILE [CAL %i% - 1] - STARTING mcc ITERATIONS /&
+&if %DSC$POINTS% < 100 &then &do
+KILL (!%tmp1% %tmp6%!) all
+&type /& TOO FEW POINTS IN THIS TILE - PROGRESSING TO NEXT /&
+&end
+  &else &do   
+KILL %tmp6% all
+&sys echo xxtile%i% >> mcctmp.aml
+&call iterations
+  &end /*end of npoint check
+&end /*end of do loop
+
+&call append
+&return
+/************************************************************************************
+&routine iterations
+/************************************************************************************
+/*Eliminating Nonground Values. Iterate to Convergance
+    &s starttime1 = [date -time]
+&type /& STARTING MULTISCALE CURVATURE CLASSIICATION /&
+
+/*****************************************
+
+&s NIterations = 0
+  &do &until %PercentLost% <= 0.1 OR %NIterations% = %MaxIterations%
+   &s NIterations = [CAL %NIterations% + 1]
+&type ******** SCALE DOMAIN 1 - Cell Size %m1cs% Threshold %m1cv% ITERATION %NIterations% ********
+      &s itstart = [date -time]
+      &s starttime = [date -time]
+&call scaledomain1
+   &call progress
+
+&type /& ELAPSED TIME FOR SCALE DOMAIN 1 ITERATION %NIterations% = %ElapsedTime% /&
+&sys echo ELAPSED TIME FOR SCALE DOMAIN 1 TILE %i% ITERATION %NIterations% - %ElapsedTime% >> MCCLog_%incov%
+&sys echo PERCENT POINTS REMOVED IN TILE %i% ITERATION %NIterations% - %PercentLost% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT START OF TILE %i% ITERATION %NIterations% - %np1% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT END OF TILE %i% ITERATION %NIterations% - %np2% >> MCCLog_%incov%
+   &end
+
+/*****************************************
+
+&s NIterations = 0
+  &do &until %PercentLost% <= 0.1 OR %NIterations% = %MaxIterations%
+   &s NIterations = [CAL %NIterations% + 1]
+&type ******** SCALE DOMAIN 2 - Cell Size %m2cs% Threshold %m2cv% ITERATION %NIterations% *******
+   &s itstart = [date -time]
+   &s starttime = [date -time]
+&call scaledomain2
+   &call progress
+
+&type /& ELAPSED TIME FOR SCALE DOMAIN 2 ITERATION %NIterations% = %ElapsedTime% /&
+&sys echo ELAPSED TIME FOR SCALE DOMAIN 2 TILE %i% ITERATION %NIterations% - %ElapsedTime% >> MCCLog_%incov%
+&sys echo PERCENT POINTS REMOVED IN TILE %i% ITERATION %NIterations% - %PercentLost% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT START OF TILE %i% ITERATION %NIterations% - %np1% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT END OF TILE %i% ITERATION %NIterations% - %np2% >> MCCLog_%incov%
+   &end
+
+/*****************************************
+
+&s NIterations = 0
+  &do &until %PercentLost% <= 0.1 OR %NIterations% = %MaxIterations%
+   &s NIterations = [CAL %NIterations% + 1]
+&type ******** SCALE DOMAIN 3 - Cell Size %m3cs% Threshold %m3cv% ITERATION %NIterations% ********
+   &s itstart = [date -time]
+   &s starttime = [date -time]
+&call scaledomain3
+   &call progress
+
+&type /& ELAPSED TIME FOR SCALE DOMAIN 3 ITERATION %NIterations% = %ElapsedTime% /&
+&sys echo  ELAPSED TIME FOR SCALE DOMAIN 3 TILE %i% ITERATION %NIterations% - %ElapsedTime% >> MCCLog_%incov%
+&sys echo PERCENT POINTS REMOVED IN TILE %i% ITERATION %NIterations% - %PercentLost% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT START OF TILE %i% ITERATION %NIterations% - %np1% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT END OF TILE %i% ITERATION %NIterations% - %np2% >> MCCLog_%incov%
+   &end
+
+/*****************************************
+
+&type ******** SCATTERED RETURN (NEGATIVE BLUNDER) FILTER ********
+   &s itstart = [date -time]
+   &s starttime = [date -time]
+&call scatteredreturns
+   &call progress
+&type /& ELAPSED TIME FOR SCATTERED RETURN FILTER = %ElapsedTime% /&
+&sys echo  ELAPSED TIME FOR SCATTERED RETURN FILTER TILE %i% - %ElapsedTime% >> MCCLog_%incov%
+&sys echo PERCENT POINTS REMOVED IN TILE %i% - %PercentLost% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT START OF TILE %i% >> MCCLog_%incov%
+&sys echo         NUMBER OF POINTS AT END OF TILE %i% >> MCCLog_%incov%
+
+RENAME %tmp1% xxtile%i%
+
+&s endtime1 = [date -time]
+&type /& START TIME TILE %i% - %starttime1%
+&type /& END TIME TILE %i% - %endtime1% /&
+
+&return
+/************************************************************************************
+&routine scaledomain1
+/************************************************************************************
+&set dz1 = %m1cv%
+&set cs = %m1cs%
+&s teststring = %item% < x-Z + %dz1% & x-Z <> -9999 
+
+&if [iteminfo %tmp1%.pat -info x-Z -exists] &then
+DROPITEM %tmp1%.pat %tmp1%.pat x-Z
+
+GRID;DISPLAY 0
+  SETWINDOW %tmp1%
+  SETCELL %m1cs%
+
+SETWINDOW [calc [show scalar $$wx0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wx1] + [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy1] + [show scalar $$cellsize]]
+
+&describe %tmp1%
+&type   /& INTERPOLATING %m1cs%m CURVATURE SURFACE USING THIN-PLATE SPLINE WITH TENSION
+
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+  %tmp3% = SPLINE(%tmp1%, %item%, TENSION, 1, %m1w%, %m1cs%)
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+   %tmp4% = FOCALMEAN(%tmp3%)
+KILL %tmp3% ALL
+
+QUIT
+
+&type   CALCULATING LOCAL CURVATURES
+
+LATTICESPOT %tmp4% %tmp1% x-Z
+   KILL (!%tmp4%!) all
+
+INDEXITEM %tmp1%.pat x-Z
+
+&type   CLASSIFYING LiDAR POINTS /&
+
+&if [exists xx* -file] &then &sys DEL xx*
+
+RESELECT %tmp1% %tmp2% POINT # POINT
+    RESELECT %teststring%
+    ~
+    NO
+    NO
+
+/* CALCULATE PERCENT LOST AT n ITERATION
+
+  &describe %tmp1%
+  &s np1 = %DSC$POINTS%
+  &describe %tmp2%
+  &s np2 = %DSC$POINTS%
+&s PercentLost = [calc ( %np1% - %np2% ) * 100 / %np1% ]
+
+&type /& PERCENT POINTS REMOVED IN ITERATION %NIterations% = %PercentLost% /&
+&type   NUMBER OF POINTS AT START OF ITERATION: %np1%
+&type   NUMBER OF POINTS AT END OF ITERATION:   %np2% /&
+
+KILL %tmp1% all
+RENAME %tmp2% %tmp1%
+
+&return
+/************************************************************************************
+&routine scaledomain2
+/************************************************************************************
+&set dz1 = %m2cv%
+&set cs = %m2cs%
+&s teststring = %item% < x-Z + %dz1% & x-Z <> -9999 
+
+&if [iteminfo %tmp1%.pat -info x-Z -exists] &then
+DROPITEM %tmp1%.pat %tmp1%.pat x-Z
+
+GRID;DISPLAY 0
+  SETWINDOW %tmp1%
+  SETCELL %m2cs%
+
+&describe %tmp1%
+
+SETWINDOW [calc [show scalar $$wx0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wx1] + [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy1] + [show scalar $$cellsize]]
+
+&type /& INTERPOLATING %m2cs%m CURVATURE SURFACE USING THIN-PLATE SPLINE WITH TENSION
+
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+  %tmp3% = SPLINE(%tmp1%, %item%, TENSION, 1, %m2w%, %m2cs%)
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+   %tmp4% = FOCALMEAN(%tmp3%)
+KILL %tmp3% ALL
+
+QUIT
+
+&type   CALCULATING LOCAL CURVATURES
+
+LATTICESPOT %tmp4% %tmp1% x-Z
+    KILL (!%tmp4%!) all
+
+INDEXITEM %tmp1%.pat x-Z
+
+&type   CLASSIFYING LiDAR POINTS /&
+
+&if [exists xx* -file] &then &sys DEL xx*
+
+RESELECT %tmp1% %tmp2% POINT # POINT
+    RESELECT %teststring%
+    ~
+    NO
+    NO
+
+/* CALCULATE PERCENT LOST AT n ITERATION
+
+  &describe %tmp1%
+  &s np1 = %DSC$POINTS%
+  &describe %tmp2%
+  &s np2 = %DSC$POINTS%
+&s PercentLost = [calc ( %np1% - %np2% ) * 100 / %np1% ]
+
+&type /& PERCENT POINTS REMOVED IN ITERATION %NIterations% = %PercentLost% /&
+&type   NUMBER OF POINTS AT START OF ITERATION: %np1%
+&type   NUMBER OF POINTS AT END OF ITERATION:   %np2% /&
+
+KILL %tmp1% ALL
+RENAME %tmp2% %tmp1%
+
+&return
+/************************************************************************************
+&routine scaledomain3
+/************************************************************************************
+&set dz1 = %m3cv%
+&set cs = %m3cs%
+&s teststring = %item% < x-Z + %dz1% & x-Z <> -9999 
+
+&if [iteminfo %tmp1%.pat -info x-Z -exists] &then
+DROPITEM %tmp1%.pat %tmp1%.pat x-Z
+
+GRID;DISPLAY 0
+  SETWINDOW %tmp1%
+  SETCELL %m3cs%
+
+&describe %tmp1%
+
+SETWINDOW [calc [show scalar $$wx0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wx1] + [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy1] + [show scalar $$cellsize]]
+
+&type /& INTERPOLATING %m3cs%m CURVATURE SURFACE USING THIN-PLATE SPLINE WITH TENSION
+
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+  %tmp3% = SPLINE(%tmp1%, %item%, TENSION, 1, %m3w%, %m3cs%)
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+   %tmp4% = FOCALMEAN(%tmp3%)
+KILL %tmp3% ALL
+
+QUIT
+
+&type   CALCULATING LOCAL CURVATURES
+
+LATTICESPOT %tmp4% %tmp1% x-Z
+    KILL (!%tmp4%!) all
+
+INDEXITEM %tmp1%.pat x-Z
+
+&type   CLASSIFYING LiDAR POINTS /&
+
+&if [exists xx* -file] &then &sys DEL xx*
+
+RESELECT %tmp1% %tmp2% POINT # POINT
+    RESELECT %teststring%
+    ~
+    NO
+    NO
+
+/* CALCULATE PERCENT LOST AT n ITERATION
+
+  &describe %tmp1%
+  &s np1 = %DSC$POINTS%
+  &describe %tmp2%
+  &s np2 = %DSC$POINTS%
+&s PercentLost = [calc ( %np1% - %np2% ) * 100 / %np1% ]
+
+&type /& PERCENT POINTS REMOVED IN ITERATION %NIterations% = %PercentLost% /&
+&type   NUMBER OF POINTS AT START OF ITERATION: %np1%
+&type   NUMBER OF POINTS AT END OF ITERATION:   %np2% /&
+
+KILL %tmp1% all
+RENAME %tmp2% %tmp1%
+
+&return
+/************************************************************************************
+&routine scatteredreturns
+/************************************************************************************
+&type /& IDENTIFYING SCATTERED RETURNS (NEGATIVE BLUNDERS)
+&if [exists xx* -file] &then &sys DEL xx*
+BUILD %tmp1% POINT
+&if [exists xx* -file] &then &sys DEL xx*
+&set cs = %ps%
+
+GRID;DISPLAY 0
+  SETWINDOW %tmp1%
+  SETCELL %ps%
+
+&describe %tmp1%
+
+SETWINDOW [calc [show scalar $$wx0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy0] - [show scalar $$cellsize]] ~
+          [calc [show scalar $$wx1] + [show scalar $$cellsize]] ~
+          [calc [show scalar $$wy1] + [show scalar $$cellsize]]
+
+&type /& INTERPOLATING %cs%m SURFACE USING THIN-PLATE SPLINE WITH TENSION
+
+&if [exist %tmp3% -grid] &then kill %tmp3% all
+  %tmp3% = SPLINE(%tmp1%, %item%, TENSION, 1, %m3w%, %cs%)
+
+IF ( %tmp3%(0,0) > %tmp3%(-2,-2) &&~
+     %tmp3%(0,0) > %tmp3%(-1,-2) &&~
+     %tmp3%(0,0) > %tmp3%(0,-2) &&~
+     %tmp3%(0,0) > %tmp3%(1,-2) &&~
+     %tmp3%(0,0) > %tmp3%(2,-2) &&~
+     %tmp3%(0,0) > %tmp3%(2,-1 ) &&~
+     %tmp3%(0,0) > %tmp3%(2,0) &&~
+     %tmp3%(0,0) > %tmp3%(2,1) &&~
+     %tmp3%(0,0) > %tmp3%(2,2) &&~
+     %tmp3%(0,0) > %tmp3%(1,2) &&~
+     %tmp3%(0,0) > %tmp3%(0,2) &&~
+     %tmp3%(0,0) > %tmp3%(-1,2) &&~
+     %tmp3%(0,0) > %tmp3%(-2,2 ) &&~
+     %tmp3%(0,0) > %tmp3%(-2,1) &&~
+     %tmp3%(0,0) > %tmp3%(-2,0) &&~
+     %tmp3%(0,0) > %tmp3%(-2,-1) ) %tmp4% = 1
+ELSE IF ( %tmp3%(0,0) < %tmp3%(-1,-1) &&~
+     %tmp3%(0,0) < %tmp3%(0,-1) &&~
+     %tmp3%(0,0) < %tmp3%(1,-1) &&~
+     %tmp3%(0,0) < %tmp3%(-1,0) &&~
+     %tmp3%(0,0) < %tmp3%(-1,1) &&~
+     %tmp3%(0,0) < %tmp3%(0,1 ) &&~
+     %tmp3%(0,0) < %tmp3%(1,1) &&~
+     %tmp3%(0,0) < %tmp3%(1,0) ) %tmp4% = 1
+ELSE %tmp4% = 0
+ENDIF
+
+   QUIT
+
+LATTICESPOT %tmp4% %tmp1% tmp-s
+
+&describe %tmp1%
+    &s np1 = %DSC$POINTS%
+&if [exists xx* -file] &then &sys DEL xx*
+&type CLASSIFYING LiDAR DATA
+ARCEDIT;DISPLAY 0
+   EDIT %tmp1% POINT
+   SEL ALL
+   RESELECT tmp-s > 0
+ &set ns = [show number select]
+   &if %ns% > 0 &then &do
+   DELETE
+   SAVE
+&end
+   &else &do
+&type /& NO POINTS IDENTIFYED /&
+&end
+
+QUIT
+   BUILD %tmp1% POINT
+&if [exists xx* -file] &then &sys DEL xx*
+  &describe %tmp1%
+    &s np2 = %DSC$POINTS%
+&s PercentLost = [calc ( %np1% - %np2% ) * 100 / %np1% ]
+&type /& PERCENT POINTS REMOVED IN SCATTERED RETURN FILTER = %PercentLost% /&
+&type   NUMBER OF POINTS AT START OF MODEL 4: %np1%
+&type   NUMBER OF POINTS AT END OF MODEL 4:   %np2% /&
+
+KILL (!%tmp4% %tmp3%!) ALL
+
+&if [iteminfo %tmp1%.pat -info tmp-s -exists] &then
+DROPITEM %tmp1%.pat %tmp1%.pat tmp-s
+
+&return
+/************************************************************************************
+&routine append
+/************************************************************************************
+&if [CAL %count% - 1] < 2 &then &do
+  RENAME xxtile%i% %outcov%
+&end
+   &else
+       &do
+&type /& APPENDING TILES - PLEASE WAIT! /&
+&sys echo END >> mcctmp.aml
+&run mcctmp.aml
+&end
+
+DROPITEM %outcov%.pat %outcov%.pat x-Z
+
+&return
+/************************************************************************************
+&routine progress
+/************************************************************************************
+
+  &s endtime = [date -time]
+  &s sthr = [before %starttime% .]
+  &s stmin = [after %starttime% .]
+  &s stsec = [after %stmin% .]
+  &s stmin = [before %stmin% .]
+  &s endhr = [before %endtime% .]
+  &s endmin = [after %endtime% .]
+  &s endsec = [after %endmin% .]
+  &s endmin = [before %endmin% .]
+  &s endtime =  [calc %endhr% + ( %endmin% / 60 ) + ( %endsec% / 3600 ) ]
+  &s starttime = [calc %sthr% + ( %stmin% / 60 ) + ( %stsec% / 3600 ) ]
+  &s eltime = [calc %endtime% - %starttime% ]
+  &if %eltime% < 0 &then &s eltime = [calc %eltime% + 24 ]
+  &s elhr = [trunc %eltime%]
+  &if %elhr% < 10 &then &s elhr = 0%elhr%
+  &s eltime = [calc ( %eltime% - %elhr% ) * 60 ]
+  &s elmin = [trunc %eltime%]
+  &if %elmin% < 10 &then &s elmin = 0%elmin%
+  &s elsec = [round [calc ( %eltime% - %elmin% ) * 60 ] ]
+  &if %elsec% < 10 &then &s elsec = 0%elsec%
+  &s ElapsedTime = %elhr%:%elmin%:%elsec%
+
+&return
+/************************************************************************************
+&routine bailout
+/************************************************************************************
+&messages &on
+   &return &error An ERROR has occured with MCC.AML...
+
+&return
+/************************************************************************************
+&routine cleanup
+/************************************************************************************
+&type /& EXITING MCC.AML AND CLEANING UP /&
+&messages &off
+
+&s logstop = [date -time]
+
+  &describe %incov%
+  &s np1 = %DSC$POINTS%
+  &describe %outcov%
+  &s np2 = %DSC$POINTS%
+&s PercentLost = [calc ( %np1% - %np2% ) * 100 / %np1% ]
+
+&type /& TOTAL PERCENT CLASSIFIED = %PercentLost% /&
+&type   NUMBER OF POINTS IN [upcase %incov%]: %np1%
+&type   NUMBER OF POINTS IN [upcase %outcov%]:  %np2% /&
+
+&sys echo TOTAL PERCENT CLASSIFIED = %PercentLost% >> MCCLog_%incov%
+&sys echo    NUMBER OF POINTS IN [upcase %incov%]:  %np1% >> MCCLog_%incov%
+&sys echo    NUMBER OF POINTS IN [upcase %outcov%]: %np2% >> MCCLog_%incov%
+&sys echo MULTISCALE CURVATURE CLASSIFICATION ENDED AT - %logstop% >> MCCLog_%incov%
+&sys echo ******************************************************* >> MCCLog_%incov%
+
+&if [exist %tmp1% -point] &then kill %tmp1% all
+&if [exist %tmp2% -point] &then kill %tmp2% all
+&if [exist %tmp3% -grid] &then kill %tmp3% all
+&if [exist %tmp4% -grid] &then kill %tmp4% all
+&if [exist %tmp5% -poly] &then kill %tmp5% all
+&if [exist %tmp6% -poly] &then kill %tmp6% all
+&if [exist %tmp7% -poly] &then kill %tmp7% all
+
+&if [exists mcctmp.aml -file] &then &sys del mcctmp.aml
+
+&do i = 1 &to [CAL %count% - 1]
+  &set i = [cal %i% + 1]
+&if [exist xxtile%i% -point] &then kill xxtile%i% all   
+&end
+
+   &messages &on
+&return
