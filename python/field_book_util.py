@@ -499,7 +499,7 @@ class SOKKIABook(HasTraits):
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
 
-    def export_azimuth_obs(self, output_filename, az_offset=0):
+    def export_azimuth_obs(self, output_filename, az_offset=0, za_offset=0):
         """Export fieldbook as azimuth observations in a text format that
         is compatible with the COLUMBUS network adjustment software."""
         out_file = open(output_filename, 'w')
@@ -534,13 +534,18 @@ class SOKKIABook(HasTraits):
                     if az >= 360:
                         az -= 360
                     az = dd2dms(az)
+                if za_offset == 0:
+                    za = record.east_vertical
+                else:
+                    za = record.east_vertical.decimal_degrees + za_offset
+                    za = dd2dms(za)
                 row.append('%.3i%.2i%07.4f' % (az.degrees,
                                                az.minutes,
                                                az.seconds))
                 row.append('%g' % self.tps_model.horizontal_sd)
-                row.append('%.3i%.2i%07.4f' % (record.east_vertical.degrees,
-                                               record.east_vertical.minutes,
-                                               record.east_vertical.seconds))
+                row.append('%.3i%.2i%07.4f' % (za.degrees,
+                                               za.minutes,
+                                               za.seconds))
                 row.append('%g' % self.tps_model.zenith_sd)
                 row.append(record.elevation_distance)
                 row.append('%g' % self.tps_model.chord_sd)
@@ -550,15 +555,18 @@ class SOKKIABook(HasTraits):
         writer = csv.writer(out_file, delimiter=';', lineterminator='\n')
         writer.writerows(rows)
                 
-def get_filenames():
+def get_args():
     """Return a list of filenames to process."""
     parser = OptionParser(usage='%prog INPUT_FILES',
                           description=' '.join(__doc__.split()),
                           version=__version__)
+    parser.add_option('-l', '--log', dest='log',
+                      action="store_true",
+                      help="Log input measurements' range of values.")
     (opts, args) = parser.parse_args()
     if name == 'nt':
         args = glob(args[0])
-    return args
+    return opts, args
 
 def average_code_obs(in_book,
                   horizontal_tol='0:1:0.0', vertical_tol='0:1:0.0',
@@ -578,7 +586,7 @@ def average_code_obs(in_book,
             sorted_codes.append(record.code)
         else:
             code_dict[record.code].append(record)
-    
+    ranges = []
     for code in sorted_codes:
         code_records = code_dict[code]
         if code_records[0].record_type == 'OBS':
@@ -637,24 +645,39 @@ def average_code_obs(in_book,
                                                        term.MAGENTA,
                                                        range_distance,
                                                        term.NORMAL)
+            ranges.append([v_angles[0].decimal_degrees - v_angles[1].decimal_degrees,
+                           h_angles[0].decimal_degrees - h_angles[1].decimal_degrees,
+                           distances[0] - distances[1],
+                           code])
             out_book.record_list.append(avg_record)
             out_book.point_count += 1
         else:
             for record in code_records:
                 out_book.record_list.append(record)
                 out_book.point_count += 1
-    return out_book
+    return out_book, ranges
 
 if __name__ == '__main__':
-    for in_filename in get_filenames():
+    OPTS, ARGS = get_args()
+    for in_filename in ARGS:
         BOOK = SOKKIABook()
         BOOK.load(in_filename)
-        AVG_BOOK = average_code_obs(BOOK)
+        AVG_BOOK, RANGES = average_code_obs(BOOK)
 #        AVG_BOOK.export_hor_obs('%s.obs' % \
 #                                path.splitext(path.basename(in_filename))[0],
 #                                bs_station='north')
         AVG_BOOK.export_azimuth_obs('%s.obs' % \
-                                    path.splitext(path.basename(in_filename))[0],
-                                    az_offset=3.7)
+                                    path.splitext(path.basename(in_filename))[0])
 #        AVG_BOOK.export_direction_obs('%s.obs' % \
 #                                      path.splitext(path.basename(in_filename))[0])
+        if OPTS.log:
+            l_handle = open(path.splitext(path.basename(in_filename))[0]+'.log',
+                            'wb')
+            l_handle.write('range_ZA_dd range_HAR_dd range_S code\n')
+            try:
+                lines = ["%.6f %.6f %.4f %s\n" % tuple(v) for v in RANGES]
+                l_handle.writelines(lines)
+            except:
+                raise
+            finally:
+                l_handle.close()
