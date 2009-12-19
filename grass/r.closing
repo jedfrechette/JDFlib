@@ -7,10 +7,10 @@
 # AUTHOR(S):    Jed Frechette, jdfrech@unm.edu
 #		        University of New Mexico Lidar Lab
 #
-# PURPOSE:	Generate a binary map with from an input using a morphological
+# PURPOSE:	Generate a binary map from an input using a morphological
 #           closing.
 #
-# VERSION:	1 developed over GRASS 6.4.0-RC4 
+# VERSION:	1 developed using GRASS 6.4.0-RC4 
 #
 # COPYRIGHT:    (c) 2009 University of New Mexico Board of Regents
 #
@@ -19,16 +19,6 @@
 #           for details.
 #
 #############################################################################
-
-# NOTES:
-#
-# 1. Requires nnbathy executable v 1.75 or later. Follow the instruction in
-#    html manual page to obtain it.
-#
-# 2. When creating the input raster map, make sure it's extents cover
-#    your whole region of interest, the cells you wish to interplate on are
-#    NULL, and the resolution is correct. Same as most GRASS raster modules
-#    this one is region sensitive too.
 
 #%Module
 #%  description: Generate a binary map from an input map using a morphological closing.
