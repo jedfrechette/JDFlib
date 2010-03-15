@@ -96,6 +96,7 @@ def main(param_file):
     
     
     pose_camera(camera,  camera_parameters)
+    scene.objects.camera = camera
 
     scene.update()
     Window.RedrawAll()
@@ -106,4 +107,3 @@ def main(param_file):
     Window.WaitCursor(0)
 
 Window.FileSelector(main, 'Load Calibration')
-
