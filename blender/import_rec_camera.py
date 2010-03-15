@@ -7,7 +7,6 @@ Tooltip: 'Import a camera defined in a JRC Reconstructor .cal file'
 """
 
 from lxml import etree
-
 from numpy import asmatrix, fromstring, identity
 
 import Blender
@@ -53,7 +52,6 @@ def pose_camera(cam, cam_etree):
     #TODO: All of the matrix operations could be switched to Matutils to remove
     #      numpy dependency.
 
-    # Compose pose matrix.
     y_rot = asmatrix(identity(4))
     y_rot[0, 0] = -1
     y_rot[2, 2] = -1
@@ -77,31 +75,23 @@ def main(param_file):
     
     camera_parameters = load_camera(param_file)
 
-    # If we are in edit mode, go out of edit mode and store the status in a var
     emode = int(Window.EditMode())
     if emode: Window.EditMode(0)
 
     scene = Scene.GetCurrent()
-    camera= create_camera(camera_parameters)
-    scene.objects.new(camera)
-    camera = Object.Get(camera.name)
-    
-    # Blender doesn't have real camera projection so we have to hack around this
-    # by adjusting the render size.
-    context = scene.getRenderingContext()
-    #TODO: This gives us dimensions of the original image but we really want the
-    #      rectified image.
-    context.imageSizeX(int(camera_parameters.getroot().get('Width')))
-    context.imageSizeY(int(camera_parameters.getroot().get('Height')))
-    
-    
+    camera_data = create_camera(camera_parameters)
+    scene.objects.new(camera_data)
+    camera = Object.Get(camera_data.name)
     pose_camera(camera,  camera_parameters)
     scene.objects.camera = camera
+    
+    context = scene.getRenderingContext()
+    context.imageSizeX(int(camera_parameters.getroot().get('Width')))
+    context.imageSizeY(int(camera_parameters.getroot().get('Height')))
 
     scene.update()
     Window.RedrawAll()
 
-    # If we were in edit mode when the script started, go back into edit mode
     if emode: Window.EditMode(1)
 
     Window.WaitCursor(0)
