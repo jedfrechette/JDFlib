@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Send a wakeonlan packet to SiSkadi from outside the LAN."""
+"""Send a wakeonlan packet to ullr from outside the LAN."""
 
 __author__ = 'Jed Frechette <jedfrechette@gmail.com>'
 __version__ = '0.1'
@@ -9,9 +9,9 @@ import socket
 import struct
 
 if __name__ == '__main__':
-    hostname = 'iceb.ath.cx'
+    hostname = 'iceb.dyndns.org'
     ip = socket.gethostbyname(hostname)
-    hw_addr = '00022AD6B5FC'
+    hw_addr = '0022151059b3'
 
     print "Sending magic packet to %s with %s" % (ip, hw_addr)
     # Pad the synchronization stream.
