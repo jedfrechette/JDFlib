@@ -31,36 +31,38 @@ cellsize=0.5
 #-------------------------------------------------------
 #-----------Plotting------------------------------------
 #-------------------------------------------------------
-psbasemap $R $J $B:."Example Contour Plot":  -Y1.5i -P -K > $outfile
+gmt_bin='/usr/lib/gmt/bin'
+
+$gmt_bin/psbasemap $R $J $B:."Example Contour Plot":  -Y1.5i -P -K > $outfile
 
 
 #--Make the grid for contouring-------------------------
 #   Output poles as x,y, then count up num of points in each cell
-stereonet --poles $datfile | awk '{print $0, "1"}' | xyz2grd -G$grid -An -I$cellsize -N0 $R
+stereonet --poles $datfile | awk '{print $0, "1"}' | $gmt_bin/xyz2grd -G$grid -An -I$cellsize -N0 $R
 
 #   Use a guassian filter as a kernel function to estimate density of data per unit area
-grdfilter $grid -Fg$filterwidth -D0 -G$filtergrid 
+$gmt_bin/grdfilter $grid -Fg$filterwidth -D0 -G$filtergrid 
 
 #   Convert units to percent (1-100) per sq. degree
 scalefac=$(echo "scale=5; 100 * $filterwidth^2 / (2*3.14 * $numdata * $cellsize^2)" | bc) 
-grdmath  $filtergrid $scalefac MUL = $filtergrid
+$gmt_bin/grdmath  $filtergrid $scalefac MUL = $filtergrid
 #-------------------------------------------------------
 
 
 
 #--Plot the grid----------------------------------------
-grd2cpt $filtergrid -Cjet -Z > $cpt
-grdimage $filtergrid $R $J -C$cpt -O -K >> $outfile
-grdcontour $filtergrid -C1 $J -O -K >> $outfile
+$gmt_bin/grd2cpt $filtergrid -Cjet -Z > $cpt
+$gmt_bin/grdimage $filtergrid $R $J -C$cpt -O -K >> $outfile
+$gmt_bin/grdcontour $filtergrid -C1 $J -O -K >> $outfile
 
 #--Overlay each measurement-----------------------------
-stereonet --poles $datfile | psxy $R $J -Ggreen -Sc5p -O -K >> $outfile
+stereonet --poles $datfile | $gmt_bin/psxy $R $J -Ggreen -Sc5p -O -K >> $outfile
 
 #--Scalebar---------------------------------------------
-psscale -D3i/-0.2i/5i/0.2ih -B1:"Percent of dataset per sq. degree": -C$cpt -O -K >> $outfile
+$gmt_bin/psscale -D3i/-0.2i/5i/0.2ih -B1:"Percent of dataset per sq. degree": -C$cpt -O -K >> $outfile
 
 #--Close things up--------------------------------------
-psbasemap $R $J $B -O >> $outfile
+$gmt_bin/psbasemap $R $J $B -O >> $outfile
 
 #--View output------------------------------------------
-gs $outfile
+#gs $outfile
