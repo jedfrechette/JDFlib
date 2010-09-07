@@ -261,7 +261,8 @@ class SOKKIABook(HasTraits):
                                                 date[2])
                 time =  [int(t) for t in date_time[4].split(':')]
                 if date_time[-1] == 'PM':
-                    time[0] += 12
+                    if time[0] != 12:
+                        time[0] += 12
                 self.print_time = datetime.time(time[0],
                                                 time[1],
                                                 time[2])
