@@ -1,0 +1,8 @@
+#!/bin/sh
+
+sudo iptables -A OUTPUT –dst 127.0.0.1 -m owner –gid-owner tunneled -j ACCEPT
+sudo iptables -A OUTPUT ! –dst 127.0.0.1 -m owner –gid-owner tunneled -j REJECT
+
+sg tunneled skype
+
+sudo iptables -F
