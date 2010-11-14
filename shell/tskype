@@ -1,8 +1,24 @@
 #!/bin/sh
 
-sudo iptables -A OUTPUT –dst 127.0.0.1 -m owner –gid-owner tunneled -j ACCEPT
-sudo iptables -A OUTPUT ! –dst 127.0.0.1 -m owner –gid-owner tunneled -j REJECT
+# Based on method describred at:
+# http://robotics.rtfmnet.com/?p=38
+#
+# User running script must be in group tunneled and have permission to run
+# iptable via sudo.
+#
+# Change Skypes options to use a SOCKS procky.
+# Host:localhost
+# Port 1080
+
+HOSTNAME=$(hostname)
+
+ssh $1 "touch $HOSTNAME_skype"
+ssh -f -D 1080 $1 "~/local/bin/run_while_file $HOSTNAME_skype"
+
+sudo iptables -A OUTPUT -d 127.0.0.1 -m owner --gid-owner tunneled -j ACCEPT
+sudo iptables -A OUTPUT ! -d 127.0.0.1 -m owner --gid-owner tunneled -j REJECT
 
 sg tunneled skype
 
-sudo iptables -F
+ssh $1 "/bin/rm $HOSTNAME_skype"
+sudo iptables -F OUTPUT
