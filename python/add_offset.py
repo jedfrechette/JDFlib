@@ -231,8 +231,8 @@ def add_offsets(coords, offsets):
     base_ids = []
     output_coords = {}
     for id in offset_ids:
+        base_id = id.split('-')[0]
         if '-' in id:
-            base_id = id.split('-')[0]
             if base_id in coord_ids:
                 base_ids.append(base_id)
                 output_coords[id] = coords[base_id] + offsets[id]
