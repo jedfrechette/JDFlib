@@ -36,7 +36,7 @@ __version__ = "0.1"
 # Standard library imports
 from glob import glob
 from optparse import OptionParser
-from os import name, path, remove
+from os import mkdir, name, path, remove
 from subprocess import call, Popen, PIPE
 
 # Numpy imports
@@ -216,17 +216,13 @@ def main():
             line_lengths = asarray([s.length for s in slines])
             line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
             if n_lines >= 5:
-#                print 80*'='
-#                print "ROI: %s" % roi.GetField('tile_index')
-#                print "ROI centroid: %s, %s" % (asarray(sroi.centroid)[0],
-#                                                asarray(sroi.centroid)[1])
-#                print "Number of lines: %s" % n_lines
-#                print "Mean line length: %s" % line_lengths.mean()
-#                print "End to end azimuth: %s" % line_orientations.mean()
-#                print 80*'='
+                output_dir = ('-').join([path.splitext(path.split(roi_filename)[1])[0],
+                                         'gmt'])
+                if not path.isdir(output_dir):
+                    mkdir(output_dir)
                 export_GMT(line_lengths,
                            line_orientations,
-                           roi, 'shk_1km_grid-gmt', opts)
+                           roi, output_dir, opts)
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
