@@ -20,5 +20,5 @@ sudo iptables -A OUTPUT ! -d 127.0.0.1 -m owner --gid-owner tunneled -j REJECT
 
 sg tunneled skype
 
-ssh $1 "/bin/rm $HOSTNAME_skype"
-sudo iptables -F OUTPUT
+#ssh $1 "/bin/rm $HOSTNAME_skype"
+#sudo iptables -F OUTPUT
