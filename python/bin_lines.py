@@ -114,6 +114,12 @@ def end2end_orientation(vert_array):
         return 180 + o
 
 def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
+    """Write a GMT script and supporting files for generating rose plots.
+    
+    Note that this script is not complete and is intended for inclusion into
+    another handwritten GMT script via 'source'. This script will place rose
+    diagrams at specific coordinates on a basemap."""
+    
     try:
         file_base = roi.GetField(opts.field)
     except ValueError:
@@ -185,6 +191,15 @@ def main():
     
     line_filenames = args[1:]
     for line_filename in line_filenames:
+        # Load line features.
+        line_src = ogr.Open(line_filename)
+        line_filebase = path.splitext(path.split(line_filename)[1])[0]
+        if not line_src:
+            raise IOError, 'Unable to open %s. The 2nd and later arguments' \
+                           'must be valid OGR Data Sources' % line_filename
+        all_lines = get_lines(line_src)
+        
+        # Setup output files.
         header = ['#This file was generated at:\n',
                   '#%s\n' % datetime.today().isoformat(),
                   '#The input line file was:\n',
@@ -192,14 +207,6 @@ def main():
                   '#The input ROI file was:\n',
                   '#%s\n' % path.abspath(roi_filename),
                   '#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
-        
-        line_src = ogr.Open(line_filename)
-        line_filebase = path.splitext(path.split(line_filename)[1])[0]
-        if not line_src:
-            raise IOError, 'Unable to open %s. The 2nd and later arguments' \
-                           'must be valid OGR Data Sources' % line_filename
-        all_lines = get_lines(line_src)
-
         gmt_dir = ('-').join([roi_filebase, line_filebase, 'gmt'])
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
@@ -208,14 +215,18 @@ def main():
                                            line_filebase,
                                            'rose.sh'])), 'wb')
         rose_sh.writelines(header)
+        
+        # Process individual ROIs
         try:
             for roi in roi_list:
+                # Calculate properties of lines intersecting ROI
                 line_list = get_intersecting_lines(all_lines, roi)
                 slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in line_list]
                 n_lines = len(slines)
                 line_lengths = asarray([s.length for s in slines])
                 line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
                 
+                # Write output data.
                 if n_lines >= opts.min_lines:
                     write_GMT_roses(line_orientations,
                                     roi,
