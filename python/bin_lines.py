@@ -34,10 +34,10 @@ __date__ = "May 19, 2011"
 __version__ = "0.1"
 
 # Standard library imports
+from datetime import datetime
 from glob import glob
 from optparse import OptionParser
-from os import mkdir, name, path, remove
-from subprocess import call, Popen, PIPE
+from os import mkdir, name, path
 
 # Numpy imports
 from numpy import arctan, append, asarray, ones, rad2deg, savetxt
@@ -60,7 +60,7 @@ except ImportError:
                        "is required but could not be found"
 
 
-def get_rois(data_source, index_field):
+def get_rois(data_source):
     """Extract a list of ROI polygon features from an OGR data source."""
     roi_list = []
     for layer in data_source:
@@ -113,26 +113,11 @@ def end2end_orientation(vert_array):
     else:
         return 180 + o
 
-def export_GMT(line_lengths, line_orientations, roi, base_dir, opts):
+def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
     try:
         file_base = roi.GetField(opts.field)
     except ValueError:
         file_base = 'FID%i' % roi.GetFID()
-    
-#    # Plot rose plot
-#    rose_name = path.join(base_dir, '.'.join([file_base, 'ps']))
-#    rose = open(rose_name, 'w')
-#    p1 = Popen('GMT psrose -R0/1/0/360 -: -A10, -S.25in -Gblack -L -P -T -F -B0.2g0.2/30g30',
-#               stdin=PIPE,
-#               stdout=rose,
-#               shell=True)
-#    for nn, length in enumerate(line_lengths):
-#        p1.stdin.write("%f %f\n" % (line_orientations[nn], length))
-#        p1.stdin.write("%f %f\n" % (180+line_orientations[nn], length))
-#    p1.communicate()
-#    rose.close()
-#    call(['eps2eps', rose_name, path.join(base_dir, '.'.join([file_base, 'eps']))])
-#    remove(rose_name)
     
     centroid = roi.geometry().Centroid()
     
@@ -145,27 +130,25 @@ def export_GMT(line_lengths, line_orientations, roi, base_dir, opts):
     centroid_ll = asarray(centroid_ll).reshape([1,2])
     
     nn = line_orientations.size
-    savetxt(path.join(base_dir, '.'.join([file_base, 'ar'])),
-                            zip(append(line_orientations,
-                                       180 + line_orientations),
-                                append(ones(nn)/nn,
-                                       ones(nn)/nn)),
-#                                append(line_lengths,
-#                                       line_lengths)),
-                            fmt='%f')
-    savetxt(path.join(base_dir, '.'.join([file_base, 'll'])),
-            centroid_ll,
-            fmt='%f')
     
-    gmt_script = open(path.join(base_dir, 'plot_roses.sh'), 'ab')
-    gmt_script.write('GMT mapproject %s.ll -R$ROI -J$PROJ -Di >%s.xy\n' % (file_base,
-                                                                         file_base))
-    gmt_script.write("xx=`awk '{print $1-.15}' %s.xy`\n" % file_base)
-    gmt_script.write("yy=`awk '{print $2-.15}' %s.xy`\n" % file_base)
-    gmt_script.write('GMT psrose %s.ar -R0/.25/0/360 -B0.1g0.1/30g30 -: \\\n' % file_base)
-    gmt_script.write('    -A10 -S.15i -Gblack -L -T -F \\\n')
-    gmt_script.write("    -Xa$xx'i' -Ya$yy'i' -F -O -K >> $PS\n\n")
-    gmt_script.close()
+    az_file = '.'.join([file_base, 'az'])
+    ll_file = '.'.join([file_base, 'll'])
+    xy_file = '.'.join([file_base, 'xy'])
+    savetxt(path.join(base_dir, az_file),
+            zip(append(line_orientations,
+                       180 + line_orientations),
+                append(ones(nn)/nn,
+                       ones(nn)/nn)),
+            fmt='%f')
+    savetxt(path.join(base_dir, ll_file), centroid_ll, fmt='%f')
+    
+    script.write('GMT mapproject %s -R$ROI -J$PROJ -Di >%s\n' % (ll_file,
+                                                                    xy_file))
+    script.write("xx=`awk '{print $1-.15}' %s`\n" % xy_file)
+    script.write("yy=`awk '{print $2-.15}' %s`\n" % xy_file)
+    script.write('GMT psrose %s -R0/.25/0/360 -B0.1g0.1/30g30 -: \\\n' % az_file)
+    script.write('    -A10 -S.15i -Gblack -L -T -F \\\n')
+    script.write("    -Xa$xx'i' -Ya$yy'i' -F -O -K >> $PS\n\n")
 
 def main():
     parser = OptionParser(usage='\n\n'.join(('%prog [options] '\
@@ -177,11 +160,11 @@ def main():
                       help='Field containing each polygons name. '\
                            'The default is: "%default"',
                       metavar='NAME_FIELD')
-#    parser.add_option('-b', '--buffer', dest='buffer',
-#                      default='0', type='float',
-#                      help='Width of buffer to add to tiles. '\
-#                           'The default is: "%default"',
-#                      metavar='BUFFER_WIDTH')
+    parser.add_option('-m', '--minimum_lines', dest='min_lines',
+                      default=5, type='int',
+                      help='Skip ROIs intersecting less than the minimum number of lines. '\
+                           'The default is: "%default"',
+                      metavar='MININIMUM_LINES')
     (opts, args) = parser.parse_args()
     
     if name == 'nt':
@@ -192,37 +175,57 @@ def main():
         return
     
     roi_filename = args[0]
+    roi_filebase = path.splitext(path.split(roi_filename)[1])[0]
     
     roi_src = ogr.Open(roi_filename)
     if not roi_src:
         raise IOError, 'Unable to open %s. The first argument must be a valid'\
                        'OGR Data Source' % roi_filename
-    roi_list = get_rois(roi_src, opts.field)
+    roi_list = get_rois(roi_src)
     
     line_filenames = args[1:]
     for line_filename in line_filenames:
+        header = ['#This file was generated at:\n',
+                  '#%s\n' % datetime.today().isoformat(),
+                  '#The input line file was:\n',
+                  '#%s\n' % path.abspath(line_filename),
+                  '#The input ROI file was:\n',
+                  '#%s\n' % path.abspath(roi_filename),
+                  '#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
+        
         line_src = ogr.Open(line_filename)
+        line_filebase = path.splitext(path.split(line_filename)[1])[0]
         if not line_src:
             raise IOError, 'Unable to open %s. The 2nd and later arguments' \
                            'must be valid OGR Data Sources' % line_filename
         all_lines = get_lines(line_src)
 
-        for roi in roi_list:
-            sroi = shapely.wkb.loads(roi.GetGeometryRef().ExportToWkb())
-            line_list = get_intersecting_lines(all_lines, roi)
-            slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in line_list]
-            
-            n_lines = len(slines)
-            line_lengths = asarray([s.length for s in slines])
-            line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
-            if n_lines >= 5:
-                output_dir = ('-').join([path.splitext(path.split(roi_filename)[1])[0],
-                                         'gmt'])
-                if not path.isdir(output_dir):
-                    mkdir(output_dir)
-                export_GMT(line_lengths,
-                           line_orientations,
-                           roi, output_dir, opts)
+        gmt_dir = ('-').join([roi_filebase, line_filebase, 'gmt'])
+        if not path.isdir(gmt_dir):
+            mkdir(gmt_dir)
+        rose_sh = open(path.join(gmt_dir,
+                                 '-'.join([roi_filebase,
+                                           line_filebase,
+                                           'rose.sh'])), 'wb')
+        rose_sh.writelines(header)
+        try:
+            for roi in roi_list:
+                line_list = get_intersecting_lines(all_lines, roi)
+                slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in line_list]
+                n_lines = len(slines)
+                line_lengths = asarray([s.length for s in slines])
+                line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
+                
+                if n_lines >= opts.min_lines:
+                    write_GMT_roses(line_orientations,
+                                    roi,
+                                    gmt_dir,
+                                    rose_sh,
+                                    opts)
+        except:
+            raise
+        finally:
+            rose_sh.close()
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
