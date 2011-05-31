@@ -38,9 +38,14 @@ from datetime import datetime
 from glob import glob
 from optparse import OptionParser
 from os import mkdir, name, path
+import csv
 
 # Numpy imports
-from numpy import arctan, append, asarray, ones, rad2deg, savetxt
+from numpy import arctan, append, around, asarray, mean, median, \
+                  ones, rad2deg, savetxt
+
+# Scipy imports
+from scipy.stats import mode
 
 # OSGEO imports
 try:
@@ -112,6 +117,21 @@ def end2end_orientation(vert_array):
         return o
     else:
         return 180 + o
+
+def get_row(line_lengths, line_orientations, roi, opts):
+    
+    try:
+        roi_name = roi.GetField(opts.field)
+    except ValueError:
+        roi_name = 'FID%i' % roi.GetFID()
+    
+    return {'roi_id': roi_name,
+            'n': len(line_lengths),
+            'length_min': min(line_lengths),
+            'length_mode_int': int(mode(around(line_lengths))[0][0]),
+            'length_median': median(line_lengths),
+            'length_mean': mean(line_lengths),
+            'length_max': max(line_lengths)}
 
 def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
     """Write a GMT script and supporting files for generating rose plots.
@@ -207,6 +227,7 @@ def main():
                   '#The input ROI file was:\n',
                   '#%s\n' % path.abspath(roi_filename),
                   '#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
+        
         gmt_dir = ('-').join([roi_filebase, line_filebase, 'gmt'])
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
@@ -215,6 +236,20 @@ def main():
                                            line_filebase,
                                            'rose.sh'])), 'wb')
         rose_sh.writelines(header)
+        
+        roi_table = open('-'.join([roi_filebase,
+                                   line_filebase,
+                                   'table.csv']), 'wb')
+        roi_table.writelines([r[:-1]+'\r\n' for r in header])
+        table_writer = csv.writer(roi_table)
+        table_cols = ['roi_id',
+                      'n',
+                      'length_min',
+                      'length_mode_int',
+                      'length_median',
+                      'length_mean',
+                      'length_max']
+        table_writer.writerow(table_cols)
         
         # Process individual ROIs
         try:
@@ -228,6 +263,9 @@ def main():
                 
                 # Write output data.
                 if n_lines >= opts.min_lines:
+                    row = get_row(line_lengths, line_orientations, roi, opts)
+                    values = [row[c] for c in table_cols]
+                    table_writer.writerow(values)
                     write_GMT_roses(line_orientations,
                                     roi,
                                     gmt_dir,
@@ -237,6 +275,7 @@ def main():
             raise
         finally:
             rose_sh.close()
+            roi_table.close()
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
