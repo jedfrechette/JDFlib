@@ -57,6 +57,7 @@ except ImportError:
                        
 # Shapely imports
 try:
+    from shapely.geometry import LineString
     import shapely
     import shapely.wkb
 except ImportError:
@@ -175,6 +176,14 @@ def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
     script.write('GMT psrose %s -R0/.25/0/360 -B0.1g0.1/30g30 -: \\\n' % az_file)
     script.write('    -A10 -S.15i -Gblack -L -T -F \\\n')
     script.write("    -Xa$xx'i' -Ya$yy'i' -F -O -K >> $PS\n\n")
+    
+def two_iter(src_list):
+    start = 0
+    end = 2
+    while end <= len(src_list):
+        yield src_list[start:end]
+        start += 1
+        end += 1
 
 def main():
     parser = OptionParser(usage='\n\n'.join(('%prog [options] '\
@@ -191,6 +200,11 @@ def main():
                       help='Skip ROIs intersecting less than the minimum number of lines. '\
                            'The default is: "%default"',
                       metavar='MININIMUM_LINES')
+    parser.add_option('-s', '--split', dest='split',
+                      default=False, action='store_true',
+                      help='Split polylines into segments at nodes before processing. '\
+                           'The default is: "%default"',
+                      metavar='SPLIT')
     (opts, args) = parser.parse_args()
     
     if name == 'nt':
@@ -227,6 +241,11 @@ def main():
                   '#The input ROI file was:\n',
                   '#%s\n' % path.abspath(roi_filename),
                   '#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
+        if opts.split:
+            header.append('#Polylines were split into segments at nodes before processing.\n')
+        else:
+            header.append('#Polyline orientations were approximated as:\n')
+            header.append('#The vector between the start & end points.\n')
         
         gmt_dir = ('-').join([roi_filebase, line_filebase, 'gmt'])
         if not path.isdir(gmt_dir):
@@ -257,6 +276,11 @@ def main():
                 # Calculate properties of lines intersecting ROI
                 line_list = get_intersecting_lines(all_lines, roi)
                 slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in line_list]
+                if opts.split:
+                    segments = []
+                    for line in slines:
+                        segments.extend([LineString(v) for v in two_iter(asarray(line))])
+                    slines = segments
                 n_lines = len(slines)
                 line_lengths = asarray([s.length for s in slines])
                 line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
