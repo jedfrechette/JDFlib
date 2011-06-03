@@ -18,16 +18,16 @@
 #
 #------------------------------------------------------------------------------
 
-"""Calculate statistics for lines within geographic areas defined by polygons
-in another geospatial data file. 
+"""Calculate statistics for lines in GIS coverages. 
 
-The first nonoption argument to the script must be a shapefile[1]_ containing
-polygons corresponding to the Regions of Interest (ROI) for analysis.
-Next one or more shapefiles containing polyline features to be analyzed should
-be provided
+One or more shapefiles[1]_ containining polyline features to be analyze should
+be provided as arguments. An additional shapefile containing Region of Interest
+(ROI) polygons can also be provided. If ROIs are provided separate statistics
+will be calculated for each group of lines that intersect the ROI, if not
+statistics will be calculated for all lines in the input file. 
 
 .. [1] It should be possible to use any format recognized by the OGR library
-   as the tile index but only shapefiles have been tested to date."""
+   as the tile index but only shapefiles have been tested."""
 
 __author__ = "Jed Frechette <jed@lidarguys.com>"
 __date__ = "May 19, 2011"
@@ -57,7 +57,7 @@ except ImportError:
                        
 # Shapely imports
 try:
-    from shapely.geometry import LineString
+    from shapely.geometry import asMultiPoint, LineString
     import shapely
     import shapely.wkb
 except ImportError:
@@ -65,9 +65,41 @@ except ImportError:
                        "(http://pypi.python.org/pypi/Shapely) "\
                        "is required but could not be found"
 
-
-def get_rois(data_source):
+def get_rois(data_source, opts):
     """Extract a list of ROI polygon features from an OGR data source."""
+    if not opts.roi_file:
+        # Extract envelope from data_source
+        corner_pts = []
+        for line_layer in data_source:
+            extents = line_layer.GetExtent()
+            corner_pts.append((extents[0], extents[2]))
+            corner_pts.append((extents[1], extents[3]))
+        pts = asMultiPoint(corner_pts)
+        roi_geom = ogr.CreateGeometryFromWkb(pts.envelope.wkb,
+                                             line_layer.GetSpatialRef())
+        
+        data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
+                             'roi'])
+        roi_file = '.'.join([data_name, 'shp'])
+        
+        if path.isfile(roi_file):
+            print "%s already exists, attempting to load ROIs" % roi_file
+            data_source = ogr.Open(roi_file)
+        else:
+            drv = ogr.GetDriverByName('ESRI Shapefile')
+            roi_src = drv.CreateDataSource(roi_file)
+            roi_layer = roi_src.CreateLayer('ROI',
+                                            line_layer.GetSpatialRef(),
+                                            ogr.wkbPolygon)
+            field_defn = ogr.FieldDefn(opts.field, ogr.OFTString)
+            field_defn.SetWidth(32)
+            roi_layer.CreateField(field_defn)
+            feature = ogr.Feature(roi_layer.GetLayerDefn())
+            feature.SetField(opts.field, data_name)
+            feature.SetGeometry(roi_geom)
+            roi_layer.CreateFeature(feature)
+            return [feature]
+    
     roi_list = []
     for layer in data_source:
         for feature in layer:
@@ -119,14 +151,8 @@ def end2end_orientation(vert_array):
     else:
         return 180 + o
 
-def get_row(line_lengths, line_orientations, roi, opts):
-    
-    try:
-        roi_name = roi.GetField(opts.field)
-    except ValueError:
-        roi_name = 'FID%i' % roi.GetFID()
-    
-    return {'roi_id': roi_name,
+def get_row(line_lengths, line_orientations, region_id):
+    return {'id': region_id,
             'n': len(line_lengths),
             'length_min': min(line_lengths),
             'length_mode_int': int(mode(around(line_lengths))[0][0]),
@@ -134,17 +160,19 @@ def get_row(line_lengths, line_orientations, roi, opts):
             'length_mean': mean(line_lengths),
             'length_max': max(line_lengths)}
 
-def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
+def get_region_id(opts, roi):
+    try:
+        region_id = roi.GetField(opts.field)
+    except ValueError:
+        region_id = 'FID%i' % roi.GetFID()
+    return region_id
+
+def write_GMT_roses(line_orientations, roi, base_dir, script, region_id):
     """Write a GMT script and supporting files for generating rose plots.
     
     Note that this script is not complete and is intended for inclusion into
     another handwritten GMT script via 'source'. This script will place rose
     diagrams at specific coordinates on a basemap."""
-    
-    try:
-        file_base = roi.GetField(opts.field)
-    except ValueError:
-        file_base = 'FID%i' % roi.GetFID()
     
     centroid = roi.geometry().Centroid()
     
@@ -158,9 +186,9 @@ def write_GMT_roses(line_orientations, roi, base_dir, script, opts):
     
     nn = line_orientations.size
     
-    az_file = '.'.join([file_base, 'az'])
-    ll_file = '.'.join([file_base, 'll'])
-    xy_file = '.'.join([file_base, 'xy'])
+    az_file = '.'.join([region_id, 'az'])
+    ll_file = '.'.join([region_id, 'll'])
+    xy_file = '.'.join([region_id, 'xy'])
     savetxt(path.join(base_dir, az_file),
             zip(append(line_orientations,
                        180 + line_orientations),
@@ -190,9 +218,14 @@ def main():
                                              'ROI_FILE LINE_FILE',
                                               __doc__)),
                           version=__version__)
+    parser.add_option('-r', '--roi_file', dest='roi_file',
+                      default=None,
+                      help='File containing polygon regions of interest. '\
+                           'The default is: "%default"',
+                      metavar='ROI_FILE')
     parser.add_option('-f', '--name_field', dest='field',
                       default='roi_index',
-                      help='Field containing each polygons name. '\
+                      help="Field containing each ROI polygon's name. "\
                            'The default is: "%default"',
                       metavar='NAME_FIELD')
     parser.add_option('-m', '--minimum_lines', dest='min_lines',
@@ -210,58 +243,57 @@ def main():
     if name == 'nt':
         args = glob(args[0])
     
-    if len(args) < 2:
+    if len(args) < 1:
         parser.print_help()
         return
     
-    roi_filename = args[0]
-    roi_filebase = path.splitext(path.split(roi_filename)[1])[0]
+    if opts.roi_file:
+        roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
+        roi_src = ogr.Open(opts.roi_file)
+        if not roi_src:
+            raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
+        roi_list = get_rois(roi_src, opts)        
     
-    roi_src = ogr.Open(roi_filename)
-    if not roi_src:
-        raise IOError, 'Unable to open %s. The first argument must be a valid'\
-                       'OGR Data Source' % roi_filename
-    roi_list = get_rois(roi_src)
-    
-    line_filenames = args[1:]
-    for line_filename in line_filenames:
+    for line_filename in args:
         # Load line features.
         line_src = ogr.Open(line_filename)
         line_filebase = path.splitext(path.split(line_filename)[1])[0]
         if not line_src:
-            raise IOError, 'Unable to open %s. The 2nd and later arguments' \
-                           'must be valid OGR Data Sources' % line_filename
+            raise IOError, 'Unable to open %s, not a valid OGR Data Source' % line_filename
         all_lines = get_lines(line_src)
         
         # Setup output files.
         header = ['#This file was generated at:\n',
                   '#%s\n' % datetime.today().isoformat(),
                   '#The input line file was:\n',
-                  '#%s\n' % path.abspath(line_filename),
-                  '#The input ROI file was:\n',
-                  '#%s\n' % path.abspath(roi_filename),
-                  '#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
+                  '#%s\n' % path.abspath(line_filename)]
+        if opts.roi_file:
+            header.append('#The input ROI file was:\n')
+            header.append('#%s\n' % path.abspath(opts.roi_file))
+            header.append('#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines)
+            gmt_dir = ('-').join([line_filebase, roi_filebase, 'gmt'])
+            rose_name = '-'.join([line_filebase, roi_filebase, 'rose.sh'])
+            table_name = '-'.join([line_filebase, roi_filebase, 'table.csv'])
+        else:
+            gmt_dir = ('-').join([line_filebase, 'gmt'])
+            rose_name = '-'.join([line_filebase, 'rose.sh'])
+            table_name = '-'.join([line_filebase, 'table.csv'])
+            roi_list = get_rois(line_src, opts)
         if opts.split:
             header.append('#Polylines were split into segments at nodes before processing.\n')
         else:
             header.append('#Polyline orientations were approximated as:\n')
             header.append('#The vector between the start & end points.\n')
-        
-        gmt_dir = ('-').join([roi_filebase, line_filebase, 'gmt'])
+
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
-        rose_sh = open(path.join(gmt_dir,
-                                 '-'.join([roi_filebase,
-                                           line_filebase,
-                                           'rose.sh'])), 'wb')
+        rose_sh = open(path.join(gmt_dir, rose_name), 'wb')
         rose_sh.writelines(header)
         
-        roi_table = open('-'.join([roi_filebase,
-                                   line_filebase,
-                                   'table.csv']), 'wb')
-        roi_table.writelines([r[:-1]+'\r\n' for r in header])
-        table_writer = csv.writer(roi_table)
-        table_cols = ['roi_id',
+        table = open(table_name, 'wb')
+        table.writelines([r[:-1]+'\r\n' for r in header])
+        table_writer = csv.writer(table)
+        table_cols = ['id',
                       'n',
                       'length_min',
                       'length_mode_int',
@@ -287,19 +319,21 @@ def main():
                 
                 # Write output data.
                 if n_lines >= opts.min_lines:
-                    row = get_row(line_lengths, line_orientations, roi, opts)
+                    row = get_row(line_lengths,
+                                  line_orientations,
+                                  get_region_id(opts, roi))
                     values = [row[c] for c in table_cols]
                     table_writer.writerow(values)
                     write_GMT_roses(line_orientations,
                                     roi,
                                     gmt_dir,
                                     rose_sh,
-                                    opts)
+                                    get_region_id(opts, roi))
         except:
             raise
         finally:
             rose_sh.close()
-            roi_table.close()
+            table.close()
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
