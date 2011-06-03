@@ -38,10 +38,11 @@ from datetime import datetime
 from glob import glob
 from optparse import OptionParser
 from os import mkdir, name, path
+from sys import exit
 import csv
 
 # Numpy imports
-from numpy import arctan, append, around, asarray, mean, median, \
+from numpy import allclose, append, arctan, around, asarray, mean, median, \
                   ones, rad2deg, savetxt
 
 # Scipy imports
@@ -65,6 +66,65 @@ except ImportError:
                        "(http://pypi.python.org/pypi/Shapely) "\
                        "is required but could not be found"
 
+def parse_cmd():
+    """Parse command line options and arguments."""
+    parser = OptionParser(usage='\n\n'.join(('%prog [options] '\
+                                             'ROI_FILE LINE_FILE',
+                                              __doc__)),
+                          version=__version__)
+    parser.add_option('-r', '--roi_file', dest='roi_file',
+                      default=None,
+                      help='File containing polygon regions of interest. '\
+                           'The default is: "%default"',
+                      metavar='ROI_FILE')
+    parser.add_option('--roi_field', dest='roi_field',
+                      default='roi_name',
+                      help="Field containing each ROI polygon's name. "\
+                           'The default is: "%default"',
+                      metavar='ROI_FIELD')
+    parser.add_option('-t', '--transect_file', dest='transect_file',
+                      default=None,
+                      help='File containing transect sampling lines. '\
+                           'The default is: "%default"',
+                      metavar='TRANSECT_FILE')
+    parser.add_option('--transect_field', dest='transect_field',
+                      default='transect_name',
+                      help="Field containing each transect line's name. "\
+                           'The default is: "%default"',
+                      metavar='TRANSECT_FIELD')
+    parser.add_option('-l', '--set_tolerance', dest='set_tolerance',
+                      default='5,10,15,20',
+                      help="List of azimuth tolerances (in degrees) within "\
+                           "which lines will be considered part of the same set. "\
+                           'The default is: "%default"',
+                      metavar='SET_TOLERANCE')
+    parser.add_option('-f', '--fill_value', dest='fill_value',
+                      default=-9999, type='int',
+                      help='Fill value for table cells with no data. '\
+                           'The default is: "%default"',
+                      metavar='FILL_VALUE')
+    parser.add_option('-m', '--minimum_lines', dest='min_lines',
+                      default=5, type='int',
+                      help='Skip ROIs intersecting less than this minimum number of lines. '\
+                           'The default is: "%default"',
+                      metavar='MININIMUM_LINES')
+    parser.add_option('-s', '--split', dest='split',
+                      default=False, action='store_true',
+                      help='Split polylines into segments at nodes before processing. '\
+                           'The default is: "%default"',
+                      metavar='SPLIT')
+    (opts, args) = parser.parse_args()
+    opts.set_tolerance = [float(v) for v in opts.set_tolerance.split(',')]
+    
+    if name == 'nt':
+        args = glob(args[0])
+    
+    if len(args) < 1:
+        parser.print_help()
+        exit()
+    
+    return (opts, args)
+    
 def get_rois(data_source, opts):
     """Extract a list of ROI polygon features from an OGR data source."""
     if not opts.roi_file:
@@ -128,13 +188,13 @@ def get_lines(data_source):
         raise IOError('No lines found in line data source.')
     return line_list
 
-def get_intersecting_lines(all_lines, roi):
-    """Extract a list of line features that intersect an ROI."""
+def get_intersecting_lines(test_lines, target):
+    """Extract a list of line features that intersect a target feature."""
     line_list = []
-    for line in all_lines:
+    for line in test_lines:
         if line.geometry().GetGeometryName() in ('MULTILINESTRING',
                                                  'LINESTRING'):    
-            if line.geometry().Intersect(roi.geometry()):
+            if line.geometry().Intersect(target.geometry()):
                 line_list.append(line)
     return line_list
 
@@ -160,12 +220,15 @@ def get_row(line_lengths, line_orientations, region_id):
             'length_mean': mean(line_lengths),
             'length_max': max(line_lengths)}
 
-def get_region_id(opts, roi):
-    try:
-        region_id = roi.GetField(opts.field)
-    except ValueError:
-        region_id = 'FID%i' % roi.GetFID()
-    return region_id
+def get_feature_id(feature, field=None):
+    if field:
+        try:
+            feature_id = feature.GetField(field)
+        except ValueError:
+            feature_id = 'FID%i' % feature.GetFID()
+    else:
+        feature_id = 'FID%i' % feature.GetFID()
+    return feature_id
 
 def write_GMT_roses(line_orientations, roi, base_dir, script, region_id):
     """Write a GMT script and supporting files for generating rose plots.
@@ -213,46 +276,70 @@ def two_iter(src_list):
         start += 1
         end += 1
 
+def split_lines(line_list):
+    """Split polylines into individual segments."""
+    segments = []
+    for line in line_list:
+        sline = shapely.wkb.loads(line.GetGeometryRef().ExportToWkb())
+        for coords in two_iter(asarray(sline)):
+            seg = line.Clone()
+            ls = LineString(coords)
+            seg.SetGeometry(ogr.CreateGeometryFromWkb(ls.wkb))
+            segments.append(seg)
+    return segments
+
+def get_normal_lines(lines, azimuth, tol):
+    """Return list of lines that are normal to azimuth, within tolerance.
+    
+    All angles are in degrees."""
+    normal = 2*(azimuth+90)
+    if normal >= 360:
+        normal -= 360
+    normal = normal/2
+        
+    n_lines = []
+    for line in lines:
+        sline = shapely.wkb.loads(line.GetGeometryRef().ExportToWkb())
+        lo = 2* asarray(end2end_orientation(asarray(sline)))
+        if lo >= 360:
+            lo -= 360
+        lo = lo/2
+        if allclose(normal, lo, atol=tol):
+            n_lines.append(line)
+    return n_lines
+
+def transect_intercept_spacing(lines, transect):
+    """Return an array listing the spacing between lines intercepting a transect."""
+    spacing = []
+    st = shapely.wkb.loads(transect.GetGeometryRef().ExportToWkb())
+    origin = shapely.geometry.Point(st.coords[0])
+    for ln in lines:
+        sln = shapely.wkb.loads(ln.GetGeometryRef().ExportToWkb())
+        spacing.append(origin.distance(st.intersection(sln)))
+    spacing.sort()
+    spacing = [v - spacing[n-1] for n, v in enumerate(spacing)][1:]
+    return asarray(spacing)
+
 def main():
-    parser = OptionParser(usage='\n\n'.join(('%prog [options] '\
-                                             'ROI_FILE LINE_FILE',
-                                              __doc__)),
-                          version=__version__)
-    parser.add_option('-r', '--roi_file', dest='roi_file',
-                      default=None,
-                      help='File containing polygon regions of interest. '\
-                           'The default is: "%default"',
-                      metavar='ROI_FILE')
-    parser.add_option('-f', '--name_field', dest='field',
-                      default='roi_index',
-                      help="Field containing each ROI polygon's name. "\
-                           'The default is: "%default"',
-                      metavar='NAME_FIELD')
-    parser.add_option('-m', '--minimum_lines', dest='min_lines',
-                      default=5, type='int',
-                      help='Skip ROIs intersecting less than the minimum number of lines. '\
-                           'The default is: "%default"',
-                      metavar='MININIMUM_LINES')
-    parser.add_option('-s', '--split', dest='split',
-                      default=False, action='store_true',
-                      help='Split polylines into segments at nodes before processing. '\
-                           'The default is: "%default"',
-                      metavar='SPLIT')
-    (opts, args) = parser.parse_args()
+    opts, args = parse_cmd()
     
-    if name == 'nt':
-        args = glob(args[0])
+    gmt_base = 'gmt'
+    rose_base = 'rose.sh'
+    line_stats_base = 'lines.csv'
+    trans_stats_base = 'transects.csv'
     
-    if len(args) < 1:
-        parser.print_help()
-        return
-    
+    roi_header = ['#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
     if opts.roi_file:
         roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
         roi_src = ogr.Open(opts.roi_file)
         if not roi_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
-        roi_list = get_rois(roi_src, opts)        
+        roi_list = get_rois(roi_src, opts)
+        roi_header = ['#The input ROI file was:\n',
+                      '#%s\n' % path.abspath(opts.roi_file)] + roi_header
+        gmt_base = ('-').join([roi_filebase, gmt_base])
+        rose_base = '-'.join([roi_filebase, rose_base])
+        line_stats_base = '-'.join([roi_filebase, line_stats_base])
     
     for line_filename in args:
         # Load line features.
@@ -261,58 +348,104 @@ def main():
         if not line_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % line_filename
         all_lines = get_lines(line_src)
-        
-        # Setup output files.
+        if opts.split:
+            all_lines = split_lines(all_lines)
+        # Define basic output file headers.
         header = ['#This file was generated at:\n',
                   '#%s\n' % datetime.today().isoformat(),
                   '#The input line file was:\n',
                   '#%s\n' % path.abspath(line_filename)]
-        if opts.roi_file:
-            header.append('#The input ROI file was:\n')
-            header.append('#%s\n' % path.abspath(opts.roi_file))
-            header.append('#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines)
-            gmt_dir = ('-').join([line_filebase, roi_filebase, 'gmt'])
-            rose_name = '-'.join([line_filebase, roi_filebase, 'rose.sh'])
-            table_name = '-'.join([line_filebase, roi_filebase, 'table.csv'])
-        else:
-            gmt_dir = ('-').join([line_filebase, 'gmt'])
-            rose_name = '-'.join([line_filebase, 'rose.sh'])
-            table_name = '-'.join([line_filebase, 'table.csv'])
-            roi_list = get_rois(line_src, opts)
         if opts.split:
-            header.append('#Polylines were split into segments at nodes before processing.\n')
+            poly_header = ['#Polylines were split into segments at nodes before processing.\n']
         else:
-            header.append('#Polyline orientations were approximated as:\n')
-            header.append('#The vector between the start & end points.\n')
-
+            poly_header = ['#Polyline orientations were approximated as:\n',
+                           '#The vector between the start & end points.\n']
+        
+        # Process transect files.  
+        if opts.transect_file:
+            trans_stats_name = '-'.join([line_filebase, trans_stats_base])
+            trans_header = ['#The input transects file was:\n',
+                            '#%s\n' % path.abspath(opts.transect_file),
+                            '#Lines normal to the transect within plus/minus\n',
+                            '#the following degrees are part of a set:\n',
+                            '#%s\n' % opts.set_tolerance,
+                            '#Fill value for output table cells with no data:\n',
+                            '#%s\n' % opts.fill_value]
+            trans_stats = open(trans_stats_name, 'wb')
+            trans_stats.writelines([r[:-1]+'\r\n' for r in header + trans_header + poly_header])
+            trans_stats_writer = csv.writer(trans_stats)
+            trans_stats_cols = ['transect_id',
+                                'transect_length',
+                                'transect_azimuth',
+                                'intercept_count',
+                                'intercept_rate']
+            for tol in opts.set_tolerance:
+                trans_stats_cols.append('normal_+/-%s_count' % tol)
+                trans_stats_cols.append('normal_+/-%s_spacing_min' % tol)
+                trans_stats_cols.append('normal_+/-%s_spacing_mean' % tol)
+                trans_stats_cols.append('normal_+/-%s_spacing_max' % tol)
+            trans_stats_writer.writerow(trans_stats_cols)
+            
+            trans_src = ogr.Open(opts.transect_file)
+            if not trans_src:
+                raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.transect_file
+            all_trans = get_lines(trans_src)
+            for trans in all_trans:
+                trans_row = [get_feature_id(trans, opts.transect_field)]
+                strans = shapely.wkb.loads(trans.GetGeometryRef().ExportToWkb())
+                
+                if len(strans.coords) != 2:
+                    print "WARNING: %s has more than 1 segment and was skipped." % trans_row[0]
+                    continue
+                
+                trans_row.append(strans.length)
+                trans_orientation = end2end_orientation(asarray(strans.coords))
+                trans_row.append(trans_orientation)
+                
+                lines = get_intersecting_lines(all_lines, trans)
+                trans_row.append(len(lines))
+                trans_row.append(len(lines)/strans.length)
+                for tol in opts.set_tolerance:
+                    n_lines = get_normal_lines(lines, trans_orientation, tol)
+                    trans_row.append(len(n_lines))
+                    if len(n_lines) > 1:
+                        spacing = transect_intercept_spacing(n_lines, trans)
+                        trans_row.append(spacing.min())
+                        trans_row.append(spacing.mean())
+                        trans_row.append(spacing.max())
+                    else:
+                        for nn in xrange(3):
+                            trans_row.append(opts.fill_value)
+                
+                trans_stats_writer.writerow(trans_row)
+        
+        # Process ROIs
+        gmt_dir = ('-').join([line_filebase, gmt_base])
+        rose_name = '-'.join([line_filebase, rose_base])
+        line_stats_name = '-'.join([line_filebase, line_stats_base])
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
         rose_sh = open(path.join(gmt_dir, rose_name), 'wb')
-        rose_sh.writelines(header)
+        line_stats = open(line_stats_name, 'wb')    
+        if not opts.roi_file:
+            roi_list = get_rois(line_src, opts)
+        rose_sh.writelines(header + roi_header +poly_header)
+        line_stats.writelines([r[:-1]+'\r\n' for r in header + roi_header + poly_header])
+            
+        line_stats_writer = csv.writer(line_stats)
+        line_stats_cols = ['id',
+                           'n',
+                           'length_min',
+                           'length_mode_int',
+                           'length_median',
+                           'length_mean',
+                           'length_max']
+        line_stats_writer.writerow(line_stats_cols)
         
-        table = open(table_name, 'wb')
-        table.writelines([r[:-1]+'\r\n' for r in header])
-        table_writer = csv.writer(table)
-        table_cols = ['id',
-                      'n',
-                      'length_min',
-                      'length_mode_int',
-                      'length_median',
-                      'length_mean',
-                      'length_max']
-        table_writer.writerow(table_cols)
-        
-        # Process individual ROIs
         try:
             for roi in roi_list:
-                # Calculate properties of lines intersecting ROI
-                line_list = get_intersecting_lines(all_lines, roi)
-                slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in line_list]
-                if opts.split:
-                    segments = []
-                    for line in slines:
-                        segments.extend([LineString(v) for v in two_iter(asarray(line))])
-                    slines = segments
+                # Calculate statistics for lines intersecting ROI
+                slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in get_intersecting_lines(all_lines, roi)]
                 n_lines = len(slines)
                 line_lengths = asarray([s.length for s in slines])
                 line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
@@ -321,19 +454,23 @@ def main():
                 if n_lines >= opts.min_lines:
                     row = get_row(line_lengths,
                                   line_orientations,
-                                  get_region_id(opts, roi))
-                    values = [row[c] for c in table_cols]
-                    table_writer.writerow(values)
+                                  get_feature_id(roi, opts.roi_field))
+                    values = [row[c] for c in line_stats_cols]
+                    line_stats_writer.writerow(values)
                     write_GMT_roses(line_orientations,
                                     roi,
                                     gmt_dir,
                                     rose_sh,
-                                    get_region_id(opts, roi))
+                                    get_feature_id(roi, opts.roi_field))
         except:
             raise
         finally:
             rose_sh.close()
-            table.close()
+            line_stats.close()
+            try:
+                trans_stats.close()
+            except:
+                pass
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
