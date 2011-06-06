@@ -24,7 +24,8 @@ One or more shapefiles[1]_ containining polyline features to be analyze should
 be provided as arguments. An additional shapefile containing Region of Interest
 (ROI) polygons can also be provided. If ROIs are provided separate statistics
 will be calculated for each group of lines that intersect the ROI, if not
-statistics will be calculated for all lines in the input file. 
+statistics will be calculated for all lines in the input file. An additional
+shapefile with transect lines for sampling line spacing can also be provided.
 
 .. [1] It should be possible to use any format recognized by the OGR library
    as the tile index but only shapefiles have been tested."""
@@ -78,7 +79,7 @@ def parse_cmd():
                            'The default is: "%default"',
                       metavar='ROI_FILE')
     parser.add_option('--roi_field', dest='roi_field',
-                      default='roi_name',
+                      default='id',
                       help="Field containing each ROI polygon's name. "\
                            'The default is: "%default"',
                       metavar='ROI_FIELD')
@@ -88,7 +89,7 @@ def parse_cmd():
                            'The default is: "%default"',
                       metavar='TRANSECT_FILE')
     parser.add_option('--transect_field', dest='transect_field',
-                      default='transect_name',
+                      default='id',
                       help="Field containing each transect line's name. "\
                            'The default is: "%default"',
                       metavar='TRANSECT_FIELD')
@@ -151,11 +152,11 @@ def get_rois(data_source, opts):
             roi_layer = roi_src.CreateLayer('ROI',
                                             line_layer.GetSpatialRef(),
                                             ogr.wkbPolygon)
-            field_defn = ogr.FieldDefn(opts.field, ogr.OFTString)
+            field_defn = ogr.FieldDefn(opts.roi_field, ogr.OFTString)
             field_defn.SetWidth(32)
             roi_layer.CreateField(field_defn)
             feature = ogr.Feature(roi_layer.GetLayerDefn())
-            feature.SetField(opts.field, data_name)
+            feature.SetField(opts.roi_field, data_name)
             feature.SetGeometry(roi_geom)
             roi_layer.CreateFeature(feature)
             return [feature]
@@ -325,7 +326,7 @@ def main():
     
     gmt_base = 'gmt'
     rose_base = 'rose.sh'
-    line_stats_base = 'lines.csv'
+    line_stats_base = 'rois.csv'
     trans_stats_base = 'transects.csv'
     
     roi_header = ['#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
