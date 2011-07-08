@@ -229,7 +229,7 @@ def get_feature_id(feature, field=None):
             feature_id = 'FID%i' % feature.GetFID()
     else:
         feature_id = 'FID%i' % feature.GetFID()
-    return feature_id
+    return str(feature_id)
 
 def write_GMT_roses(line_orientations, roi, base_dir, script, region_id):
     """Write a GMT script and supporting files for generating rose plots.
