@@ -83,6 +83,11 @@ def parse_cmd():
                       help="Field containing each ROI polygon's name. "\
                            'The default is: "%default"',
                       metavar='ROI_FIELD')
+    parser.add_option('--label', dest='label',
+                      default=False, action='store_true',
+                      help="Label ROIs in GMT output. "\
+                           'The default is: "%default"',
+                      metavar='LABEL')
     parser.add_option('-t', '--transect_file', dest='transect_file',
                       default=None,
                       help='File containing transect sampling lines. '\
@@ -231,7 +236,7 @@ def get_feature_id(feature, field=None):
         feature_id = 'FID%i' % feature.GetFID()
     return str(feature_id)
 
-def write_GMT_roses(line_orientations, roi, base_dir, script, region_id):
+def write_GMT_roses(line_orientations, roi, base_dir, script, region_id, label=True):
     """Write a GMT script and supporting files for generating rose plots.
     
     Note that this script is not complete and is intended for inclusion into
@@ -267,8 +272,14 @@ def write_GMT_roses(line_orientations, roi, base_dir, script, region_id):
     script.write("yy=`awk '{print $2-.15}' %s`\n" % xy_file)
     script.write('GMT psrose %s -R0/.25/0/360 -B0.1g0.1/30g30 -: \\\n' % az_file)
     script.write('    -A10 -S.15i -Gblack -L -T -F \\\n')
-    script.write("    -Xa$xx'i' -Ya$yy'i' -F -O -K >> $PS\n\n")
-    
+    script.write("    -Xa$xx'i' -Ya$yy'i' -F -O -K >> $PS\n")
+    if label == True:
+        script.write("lat=`awk '{print $1}' %s`\n" % ll_file)
+        script.write("long=`awk '{print $2}' %s`\n" % ll_file)
+        script.write("cat << EOF | GMT pstext -R$ROI -J$PROJ -D.15i/0 -O -K >> $PS\n")
+        script.write("$lat $long 10 0 0 TL %s\n" % region_id)
+        script.write("EOF\n")
+    script.write("\n")
 def two_iter(src_list):
     start = 0
     end = 2
@@ -336,8 +347,11 @@ def main():
         if not roi_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
         roi_list = get_rois(roi_src, opts)
-        roi_header = ['#The input ROI file was:\n',
-                      '#%s\n' % path.abspath(opts.roi_file)] + roi_header
+        roi_header = roi_header + ['#The input ROI file was:\n',
+                                   '#%s\n' % path.abspath(opts.roi_file)]
+        
+        roi_header = roi_header + ['#The ROI id field was:\n',
+                                   '#%s\n' % opts.roi_field]
         gmt_base = ('-').join([roi_filebase, gmt_base])
         rose_base = '-'.join([roi_filebase, rose_base])
         line_stats_base = '-'.join([roi_filebase, line_stats_base])
@@ -359,8 +373,9 @@ def main():
         if opts.split:
             poly_header = ['#Polylines were split into segments at nodes before processing.\n']
         else:
-            poly_header = ['#Polyline orientations were approximated as:\n',
-                           '#The vector between the start & end points.\n']
+            poly_header = ['#Polyline orientations were approximated as \n',
+                           '#the vector between the start & end points and \n'
+                           '#lengths are for the entire multi-segment line.\n']
         
         # Process transect files.  
         if opts.transect_file:
@@ -462,7 +477,8 @@ def main():
                                     roi,
                                     gmt_dir,
                                     rose_sh,
-                                    get_feature_id(roi, opts.roi_field))
+                                    get_feature_id(roi, opts.roi_field),
+                                    opts.label)
         except:
             raise
         finally:
