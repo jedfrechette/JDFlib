@@ -69,7 +69,7 @@ except ImportError:
 def parse_cmd():
     """Parse command line options and arguments."""
     parser = OptionParser(usage='\n\n'.join(('%prog [options] '\
-                                             'ROI_FILE LINE_FILE',
+                                             'LINE_FILE',
                                               __doc__)),
                           version=__version__)
     parser.add_option('-r', '--roi_file', dest='roi_file',
