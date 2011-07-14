@@ -52,6 +52,7 @@ from scipy.stats import mode
 # OSGEO imports
 try:
     from osgeo import ogr
+    ogr.UseExceptions()
 except ImportError:
     raise ImportError, "The OGR Simple Feature Library "\
                        "(http://www.gdal.org/ogr/) "\
@@ -130,10 +131,16 @@ def parse_cmd():
         exit()
     
     return (opts, args)
-    
-def get_rois(data_source, opts):
-    """Extract a list of ROI polygon features from an OGR data source."""
-    if not opts.roi_file:
+
+def get_roi_datasource(data_source, opts):
+    """Return an OGR data source with transect LINESTRING features."""
+    drv = ogr.GetDriverByName("ESRI Shapefile")
+    if opts.roi_file:
+        data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
+                             TIMESTAMP])
+        out_ds = drv.CreateDataSource('.'.join([data_name, 'shp']))
+        out_ds.CopyLayer(data_source[0], data_source.GetName())
+    else:
         # Extract envelope from data_source
         corner_pts = []
         for line_layer in data_source:
@@ -145,18 +152,18 @@ def get_rois(data_source, opts):
                                              line_layer.GetSpatialRef())
         
         data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
-                             'roi'])
+                             'roi',
+                             TIMESTAMP])
         roi_file = '.'.join([data_name, 'shp'])
         
         if path.isfile(roi_file):
             print "%s already exists, attempting to load ROIs" % roi_file
-            data_source = ogr.Open(roi_file)
+            out_ds = ogr.Open(roi_file)
         else:
-            drv = ogr.GetDriverByName('ESRI Shapefile')
-            roi_src = drv.CreateDataSource(roi_file)
-            roi_layer = roi_src.CreateLayer('ROI',
-                                            line_layer.GetSpatialRef(),
-                                            ogr.wkbPolygon)
+            out_ds = drv.CreateDataSource('.'.join([data_name, 'shp']))
+            roi_layer = out_ds.CreateLayer('ROI',
+                                           line_layer.GetSpatialRef(),
+                                           ogr.wkbPolygon)
             field_defn = ogr.FieldDefn(opts.roi_field, ogr.OFTString)
             field_defn.SetWidth(32)
             roi_layer.CreateField(field_defn)
@@ -164,18 +171,18 @@ def get_rois(data_source, opts):
             feature.SetField(opts.roi_field, data_name)
             feature.SetGeometry(roi_geom)
             roi_layer.CreateFeature(feature)
-            return [feature]
+    return out_ds
+
+def get_transect_datasource(data_source):
+    """Return an OGR data source with polygon ROI features."""
+    drv = ogr.GetDriverByName("ESRI Shapefile")
+    data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
+                         TIMESTAMP])
     
-    roi_list = []
-    for layer in data_source:
-        for feature in layer:
-            if feature.geometry():
-                if feature.geometry().GetGeometryName() == 'POLYGON':
-                    roi_list.append(feature)
-        layer.ResetReading()
-    if len(roi_list) == 0:
-        raise IOError('No ROI polygons found in ROI data source.')
-    return roi_list
+    out_ds = drv.CreateDataSource('.'.join([data_name, 'shp']))
+    out_ds.CopyLayer(data_source[0], data_source.GetName())
+    
+    return out_ds
 
 def get_lines(data_source):
     """Extract a list of line features from an OGR data source."""
@@ -216,15 +223,6 @@ def end2end_orientation(vert_array):
         return o
     else:
         return 180 + o
-
-def get_row(line_lengths, line_orientations, region_id):
-    return {'id': region_id,
-            'n': len(line_lengths),
-            'length_min': min(line_lengths),
-            'length_mode_int': int(mode(around(line_lengths))[0][0]),
-            'length_median': median(line_lengths),
-            'length_mean': mean(line_lengths),
-            'length_max': max(line_lengths)}
 
 def get_feature_id(feature, field=None):
     if field:
@@ -301,7 +299,7 @@ def split_lines(line_list):
     return segments
 
 def get_normal_lines(lines, azimuth, tol):
-    """Return list of lines that are normal to azimuth, within tolerance.
+    """Return list of lines that are normal to azimuth, within plus or minus tol.
     
     All angles are in degrees."""
     normal = 2*(azimuth+90)
@@ -331,14 +329,12 @@ def transect_intercept_spacing(lines, transect):
     spacing.sort()
     spacing = [v - spacing[n-1] for n, v in enumerate(spacing)][1:]
     return asarray(spacing)
-
+    
 def main():
     opts, args = parse_cmd()
     
     gmt_base = 'gmt'
     rose_base = 'rose.sh'
-    line_stats_base = 'rois.csv'
-    trans_stats_base = 'transects.csv'
     
     roi_header = ['#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
     if opts.roi_file:
@@ -346,7 +342,7 @@ def main():
         roi_src = ogr.Open(opts.roi_file)
         if not roi_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
-        roi_list = get_rois(roi_src, opts)
+        roi_ds = get_roi_datasource(roi_src, opts)
         roi_header = roi_header + ['#The input ROI file was:\n',
                                    '#%s\n' % path.abspath(opts.roi_file)]
         
@@ -354,7 +350,6 @@ def main():
                                    '#%s\n' % opts.roi_field]
         gmt_base = ('-').join([roi_filebase, gmt_base])
         rose_base = '-'.join([roi_filebase, rose_base])
-        line_stats_base = '-'.join([roi_filebase, line_stats_base])
     
     for line_filename in args:
         # Load line features.
@@ -367,7 +362,7 @@ def main():
             all_lines = split_lines(all_lines)
         # Define basic output file headers.
         header = ['#This file was generated at:\n',
-                  '#%s\n' % datetime.today().isoformat(),
+                  '#%s\n' % NOW.isoformat(),
                   '#The input line file was:\n',
                   '#%s\n' % path.abspath(line_filename)]
         if opts.split:
@@ -378,117 +373,142 @@ def main():
                            '#lengths are for the entire multi-segment line.\n']
         
         # Process transect files.  
-        if opts.transect_file:
-            trans_stats_name = '-'.join([line_filebase, trans_stats_base])
-            trans_header = ['#The input transects file was:\n',
-                            '#%s\n' % path.abspath(opts.transect_file),
-                            '#Lines normal to the transect within plus/minus\n',
-                            '#the following degrees are part of a set:\n',
-                            '#%s\n' % opts.set_tolerance,
-                            '#Fill value for output table cells with no data:\n',
-                            '#%s\n' % opts.fill_value]
-            trans_stats = open(trans_stats_name, 'wb')
-            trans_stats.writelines([r[:-1]+'\r\n' for r in header + trans_header + poly_header])
-            trans_stats_writer = csv.writer(trans_stats)
-            trans_stats_cols = ['transect_id',
-                                'transect_length',
-                                'transect_azimuth',
-                                'intercept_count',
-                                'intercept_rate']
-            for tol in opts.set_tolerance:
-                trans_stats_cols.append('normal_+/-%s_count' % tol)
-                trans_stats_cols.append('normal_+/-%s_spacing_min' % tol)
-                trans_stats_cols.append('normal_+/-%s_spacing_mean' % tol)
-                trans_stats_cols.append('normal_+/-%s_spacing_max' % tol)
-            trans_stats_writer.writerow(trans_stats_cols)
-            
-            trans_src = ogr.Open(opts.transect_file)
-            if not trans_src:
+            trans_ds = ogr.Open(opts.transect_file)
+            if not trans_ds:
                 raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.transect_file
-            all_trans = get_lines(trans_src)
-            for trans in all_trans:
-                trans_row = [get_feature_id(trans, opts.transect_field)]
-                strans = shapely.wkb.loads(trans.GetGeometryRef().ExportToWkb())
-                
-                if len(strans.coords) != 2:
-                    print "WARNING: %s has more than 1 segment and was skipped." % trans_row[0]
-                    continue
-                
-                trans_row.append(strans.length)
-                trans_orientation = end2end_orientation(asarray(strans.coords))
-                trans_row.append(trans_orientation)
-                
-                lines = get_intersecting_lines(all_lines, trans)
-                trans_row.append(len(lines))
-                trans_row.append(len(lines)/strans.length)
-                for tol in opts.set_tolerance:
-                    n_lines = get_normal_lines(lines, trans_orientation, tol)
-                    trans_row.append(len(n_lines))
-                    if len(n_lines) > 1:
-                        spacing = transect_intercept_spacing(n_lines, trans)
-                        trans_row.append(spacing.min())
-                        trans_row.append(spacing.mean())
-                        trans_row.append(spacing.max())
-                    else:
-                        for nn in xrange(3):
-                            trans_row.append(opts.fill_value)
-                
-                trans_stats_writer.writerow(trans_row)
-        
+            trans_ds= get_transect_datasource(trans_ds)
+                        
+            trans_map = {"trans_len": ["trans_len",
+                                       ogr.FieldDefn("trans_len", ogr.OFTReal),
+                                       lambda st, ln: st.length],
+                         "trans_az": ["trans_az",
+                                       ogr.FieldDefn("trans_az", ogr.OFTReal),
+                                       lambda st, ln: end2end_orientation(asarray(st.coords))],
+                         "icpt_count": ["icpt_count",
+                                        ogr.FieldDefn("icpt_count", ogr.OFTInteger),
+                                        lambda st, ln: len(ln)],
+                         "icpt_rate": ["icpt_rate",
+                                       ogr.FieldDefn("icpt_rate", ogr.OFTReal),
+                                       lambda st, ln: len(ln)/st.length]}
+            tol_keys = []
+            for tol in opts.set_tolerance:
+                tol_keys.append('%gt_cnt' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTInteger)]
+                tol_keys.append('%gt_smin' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTReal)]
+                tol_keys.append('%gt_smean' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTReal)]
+                tol_keys.append('%gt_smax' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTReal)]
+            for layer in trans_ds:
+                for trans_field in trans_map.values():
+                    layer.CreateField(trans_field[1])
+                    f_idx = layer.GetLayerDefn().GetFieldCount() - 1
+                    trans_field[0] = layer.GetLayerDefn().GetFieldDefn(f_idx).GetName()
+                for trans in layer:
+                    if trans.geometry() and trans.geometry().GetGeometryName() == 'LINESTRING':                        
+                        strans = shapely.wkb.loads(trans.GetGeometryRef().ExportToWkb())
+                        if len(strans.coords) != 2:
+                            print "WARNING: FID %s has more than 1 segment " \
+                            "and was skipped." % trans.GetFID()
+                            continue
+                        lines = get_intersecting_lines(all_lines, trans)
+                        
+                        # Update output data source.
+                        for key, trans_field in trans_map.iteritems():
+                            if key not in tol_keys:
+                                trans.SetField(trans_field[0],
+                                               trans_field[2](strans,
+                                                              lines))
+                        for tol in opts.set_tolerance:
+                            n_lines = get_normal_lines(lines,
+                                                       trans.GetField(trans_map['trans_az'][0]),
+                                                       tol)
+                            trans.SetField(trans_map['%gt_cnt' % tol][0],
+                                           len(n_lines))
+                            if len(n_lines) > 1:
+                                spacing = transect_intercept_spacing(n_lines, trans)
+                                trans.SetField(trans_map['%gt_smin' % tol][0], spacing.min())
+                                trans.SetField(trans_map['%gt_smean' % tol][0], spacing.mean())
+                                trans.SetField(trans_map['%gt_smax' % tol][0], spacing.max())
+                                
+                    elif trans.geometry() and trans.geometry().GetGeometryName() == 'MULTILINESTRING':
+                        print "WARNING: MULTILINESTRINGs aren't supported yet, " \
+                          "FID number %s was skipped." % trans.GetFID()
+                    layer.SetFeature(trans)
+                layer.ResetReading()
+
         # Process ROIs
         gmt_dir = ('-').join([line_filebase, gmt_base])
         rose_name = '-'.join([line_filebase, rose_base])
-        line_stats_name = '-'.join([line_filebase, line_stats_base])
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
-        rose_sh = open(path.join(gmt_dir, rose_name), 'wb')
-        line_stats = open(line_stats_name, 'wb')    
+        rose_sh = open(path.join(gmt_dir, rose_name), 'wb') 
         if not opts.roi_file:
-            roi_list = get_rois(line_src, opts)
+            roi_ds = get_roi_datasource(line_src, opts)
         rose_sh.writelines(header + roi_header +poly_header)
-        line_stats.writelines([r[:-1]+'\r\n' for r in header + roi_header + poly_header])
-            
-        line_stats_writer = csv.writer(line_stats)
-        line_stats_cols = ['id',
-                           'n',
-                           'length_min',
-                           'length_mode_int',
-                           'length_median',
-                           'length_mean',
-                           'length_max']
-        line_stats_writer.writerow(line_stats_cols)
-        
+
         try:
-            for roi in roi_list:
-                # Calculate statistics for lines intersecting ROI
-                slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in get_intersecting_lines(all_lines, roi)]
-                n_lines = len(slines)
-                line_lengths = asarray([s.length for s in slines])
-                line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
-                
-                # Write output data.
-                if n_lines >= opts.min_lines:
-                    row = get_row(line_lengths,
-                                  line_orientations,
-                                  get_feature_id(roi, opts.roi_field))
-                    values = [row[c] for c in line_stats_cols]
-                    line_stats_writer.writerow(values)
-                    write_GMT_roses(line_orientations,
-                                    roi,
-                                    gmt_dir,
-                                    rose_sh,
-                                    get_feature_id(roi, opts.roi_field),
-                                    opts.label)
+            roi_map = {"line_count": ["line_count",
+                                      ogr.FieldDefn("line_count", ogr.OFTInteger),
+                                      len],
+                       "len_min": ["len_min",
+                                   ogr.FieldDefn("len_min", ogr.OFTReal),
+                                   min],
+                       "len_md_int": ["len_md_int",
+                                      ogr.FieldDefn("len_md_int", ogr.OFTInteger),
+                                      lambda x: int(mode(around(x))[0][0])],
+                       "len_median": ["len_median",
+                                      ogr.FieldDefn("len_median", ogr.OFTReal),
+                                      median],
+                       "len_mean": ["len_mean",
+                                    ogr.FieldDefn("len_mean", ogr.OFTReal),
+                                    mean],
+                       "len_max": ["len_max",
+                                   ogr.FieldDefn("len_max", ogr.OFTReal),
+                                   max]}
+            for layer in roi_ds:
+                for roi_field in roi_map.values():
+                    layer.CreateField(roi_field[1])
+                    f_idx = layer.GetLayerDefn().GetFieldCount() - 1
+                    roi_field[0] = layer.GetLayerDefn().GetFieldDefn(f_idx).GetName()
+                for roi in layer:
+                    if roi.geometry() and roi.geometry().GetGeometryName() == 'POLYGON':     
+                        # Calculate statistics for lines intersecting ROI
+                        slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in get_intersecting_lines(all_lines, roi)]
+                        n_lines = len(slines)
+                        line_lengths = asarray([s.length for s in slines])
+                        line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
+                        
+                        # Update output data source.
+                        for roi_field in roi_map.values():
+                            roi.SetField(roi_field[0], roi_field[2](line_lengths))
+                        
+                        # Write output data.
+                        if n_lines >= opts.min_lines:
+                            write_GMT_roses(line_orientations,
+                                            roi,
+                                            gmt_dir,
+                                            rose_sh,
+                                            get_feature_id(roi, opts.roi_field),
+                                            opts.label)
+                    layer.SetFeature(roi)
+                layer.ResetReading()
         except:
             raise
         finally:
             rose_sh.close()
-            line_stats.close()
-            try:
-                trans_stats.close()
-            except:
-                pass
         print "Finished processing: %s" % line_filename
     
 if __name__ == '__main__':
+    NOW = datetime.now()
+    TIMESTAMP = NOW.strftime('%Y%m%d%H%m%S')
     main()
