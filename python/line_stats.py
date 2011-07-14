@@ -39,8 +39,7 @@ from datetime import datetime
 from glob import glob
 from optparse import OptionParser
 from os import mkdir, name, path
-from sys import exit
-import csv
+from sys import argv, exit
 
 # Numpy imports
 from numpy import allclose, append, arctan, around, asarray, mean, median, \
@@ -80,7 +79,7 @@ def parse_cmd():
                            'The default is: "%default"',
                       metavar='ROI_FILE')
     parser.add_option('--roi_field', dest='roi_field',
-                      default='id',
+                      default='FID',
                       help="Field containing each ROI polygon's name. "\
                            'The default is: "%default"',
                       metavar='ROI_FIELD')
@@ -105,11 +104,6 @@ def parse_cmd():
                            "which lines will be considered part of the same set. "\
                            'The default is: "%default"',
                       metavar='SET_TOLERANCE')
-    parser.add_option('-f', '--fill_value', dest='fill_value',
-                      default=-9999, type='int',
-                      help='Fill value for table cells with no data. '\
-                           'The default is: "%default"',
-                      metavar='FILL_VALUE')
     parser.add_option('-m', '--minimum_lines', dest='min_lines',
                       default=5, type='int',
                       help='Skip ROIs intersecting less than this minimum number of lines. '\
@@ -183,23 +177,6 @@ def get_transect_datasource(data_source):
     out_ds.CopyLayer(data_source[0], data_source.GetName())
     
     return out_ds
-
-def get_lines(data_source):
-    """Extract a list of line features from an OGR data source."""
-    line_list = []
-    for layer in data_source:
-        for feature in layer:
-            if feature.geometry():
-                if feature.geometry().GetGeometryName() == 'LINESTRING':    
-                    line_list.append(feature)
-                elif feature.geometry().GetGeometryName() == 'MULTILINESTRING':
-                    print "WARNING: MULTILINESTRINGs aren't supported yet, " \
-                          "FID number %s was skipped." % feature.GetFID()
-                    #TODO: Split MULTILINESTRING into LINESTRINGs.
-        layer.ResetReading()
-    if len(line_list) == 0:
-        raise IOError('No lines found in line data source.')
-    return line_list
 
 def get_intersecting_lines(test_lines, target):
     """Extract a list of line features that intersect a target feature."""
@@ -329,25 +306,57 @@ def transect_intercept_spacing(lines, transect):
     spacing.sort()
     spacing = [v - spacing[n-1] for n, v in enumerate(spacing)][1:]
     return asarray(spacing)
-    
+
 def main():
     opts, args = parse_cmd()
     
     gmt_base = 'gmt'
     rose_base = 'rose.sh'
     
-    roi_header = ['#ROIs intersecting less than %i lines were ignored.\n' % opts.min_lines]
+    # Start collecting notes on processing.
+    notes = ["Processing was completed at:\n",
+             "%s\n" % NOW.isoformat(),
+             "The command executed was:\n",
+             "%s\n\n" % ' '.join(argv),
+             "The input line file(s) were:\n",
+             "\n".join([path.abspath(a) for a in args]),
+             "\n"]
+    
+    if opts.roi_file:
+        notes.append('The input ROI file was:\n')
+        notes.append('%s\n' % path.abspath(opts.roi_file))
+    if opts.transect_file:
+        notes.append('The input transect file was:\n')
+        notes.append('%s\n' % path.abspath(opts.transect_file))
+    notes.append("\n")
+    
+    if opts.split:
+        notes.append('Polylines were split into segments at nodes before processing.\n')
+    else:
+        notes.append('Polyline orientations were approximated as the vector ')
+        notes.append('between the\nstart and end points.\n')
+        notes.append('Lengths are for the entire multi-segment line.\n')
+    if opts.transect_file:
+        notes.append('Lines oriented normal to transects within plus or minus ')
+        notes.append('the following\ntolerances were considered sets\n')
+        for tol in opts.set_tolerance:
+            notes.append("%g degrees\n" % tol)
+    notes.append("\n")
+        
+    notes.append("ROIs intersecting less than %i lines were ignored for plotting.\n"
+                  % opts.min_lines)
+    if opts.label:
+        notes.append("The field %s was used to label ROIs for plotting.\n" 
+                     % opts.roi_field)
+    notes.append('\n')
+    
     if opts.roi_file:
         roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
         roi_src = ogr.Open(opts.roi_file)
         if not roi_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
         roi_ds = get_roi_datasource(roi_src, opts)
-        roi_header = roi_header + ['#The input ROI file was:\n',
-                                   '#%s\n' % path.abspath(opts.roi_file)]
         
-        roi_header = roi_header + ['#The ROI id field was:\n',
-                                   '#%s\n' % opts.roi_field]
         gmt_base = ('-').join([roi_filebase, gmt_base])
         rose_base = '-'.join([roi_filebase, rose_base])
     
@@ -357,20 +366,26 @@ def main():
         line_filebase = path.splitext(path.split(line_filename)[1])[0]
         if not line_src:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % line_filename
-        all_lines = get_lines(line_src)
+        all_lines = []
+        for layer in line_src:
+            for feature in layer:
+                if feature.geometry():
+                    if feature.geometry().GetGeometryName() == 'LINESTRING':    
+                        all_lines.append(feature)
+                    
+                    #TODO: Split MULTILINESTRING into LINESTRINGs.
+                    elif feature.geometry().GetGeometryName() == 'MULTILINESTRING':
+                        notes.append("WARNING: MULTILINESTRINGs aren't " \
+                                     "supported yet, LINE FID %s was skipped.\n"
+                                     % feature.GetFID())
+                        print notes[-1][:-1]
+        layer.ResetReading()
+        if len(all_lines) == 0:
+            raise IOError('No lines found in line data source.')
         if opts.split:
             all_lines = split_lines(all_lines)
-        # Define basic output file headers.
-        header = ['#This file was generated at:\n',
-                  '#%s\n' % NOW.isoformat(),
-                  '#The input line file was:\n',
-                  '#%s\n' % path.abspath(line_filename)]
-        if opts.split:
-            poly_header = ['#Polylines were split into segments at nodes before processing.\n']
-        else:
-            poly_header = ['#Polyline orientations were approximated as \n',
-                           '#the vector between the start & end points and \n'
-                           '#lengths are for the entire multi-segment line.\n']
+
+
         
         # Process transect files.  
             trans_ds = ogr.Open(opts.transect_file)
@@ -417,8 +432,10 @@ def main():
                     if trans.geometry() and trans.geometry().GetGeometryName() == 'LINESTRING':                        
                         strans = shapely.wkb.loads(trans.GetGeometryRef().ExportToWkb())
                         if len(strans.coords) != 2:
-                            print "WARNING: FID %s has more than 1 segment " \
-                            "and was skipped." % trans.GetFID()
+                            notes.append("WARNING: TRANSECT FID %s has more " \
+                                         "than 1 segment and was skipped.\n"
+                                         % trans.GetFID())
+                            print notes[-1][:-1]
                             continue
                         lines = get_intersecting_lines(all_lines, trans)
                         
@@ -441,8 +458,10 @@ def main():
                                 trans.SetField(trans_map['%gt_smax' % tol][0], spacing.max())
                                 
                     elif trans.geometry() and trans.geometry().GetGeometryName() == 'MULTILINESTRING':
-                        print "WARNING: MULTILINESTRINGs aren't supported yet, " \
-                          "FID number %s was skipped." % trans.GetFID()
+                        notes.append("WARNING: MULTILINESTRINGs aren't "
+                                     "supported yet, TRANSECT FID %s was skipped.\n"
+                                     % trans.GetFID())
+                        print notes[-1][:-1]
                     layer.SetFeature(trans)
                 layer.ResetReading()
 
@@ -454,7 +473,10 @@ def main():
         rose_sh = open(path.join(gmt_dir, rose_name), 'wb') 
         if not opts.roi_file:
             roi_ds = get_roi_datasource(line_src, opts)
-        rose_sh.writelines(header + roi_header +poly_header)
+        rose_sh.write("#This script is incomplete & is intended for inclusion\n")
+        rose_sh.write("#into another handwritten GMT script via 'source'.\n")
+        rose_sh.write("#This script will place rose diagrams at specific\n")
+        rose_sh.write("#latitude longitude (*.ll) coordinates on a basemap.\n")
 
         try:
             roi_map = {"line_count": ["line_count",
@@ -507,7 +529,10 @@ def main():
         finally:
             rose_sh.close()
         print "Finished processing: %s" % line_filename
-    
+        
+    notes_handle = open('notes-%s.txt' % TIMESTAMP, 'wb')
+    notes_handle.writelines(notes)
+    notes_handle.close()
 if __name__ == '__main__':
     NOW = datetime.now()
     TIMESTAMP = NOW.strftime('%Y%m%d%H%m%S')
