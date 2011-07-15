@@ -255,6 +255,7 @@ def write_GMT_roses(line_orientations, roi, base_dir, script, region_id, label=T
         script.write("$lat $long 10 0 0 TL %s\n" % region_id)
         script.write("EOF\n")
     script.write("\n")
+    
 def two_iter(src_list):
     start = 0
     end = 2
@@ -343,12 +344,13 @@ def main():
             notes.append("%g degrees\n" % tol)
     notes.append("\n")
         
-    notes.append("ROIs intersecting less than %i lines were ignored for plotting.\n"
+    notes.append("ROIs intersecting less than %i lines were not processed.\n"
                   % opts.min_lines)
     if opts.label:
-        notes.append("The field %s was used to label ROIs for plotting.\n" 
+        notes.append("The field %s was used to identify ROIs.\n\n" 
                      % opts.roi_field)
-    notes.append('\n')
+    else:
+        notes.append('The OGR Feature ID (FID) was used to identify ROIs.\n\n')
     
     if opts.roi_file:
         roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
@@ -360,14 +362,18 @@ def main():
         gmt_base = ('-').join([roi_filebase, gmt_base])
         rose_base = '-'.join([roi_filebase, rose_base])
     
+    notes.append('='*11)
+    notes.append('\nMessage Log\n')
+    notes.append('='*11)
+    notes.append('\n\n')
     for line_filename in args:
         # Load line features.
-        line_src = ogr.Open(line_filename)
+        line_ds = ogr.Open(line_filename)
         line_filebase = path.splitext(path.split(line_filename)[1])[0]
-        if not line_src:
+        if not line_ds:
             raise IOError, 'Unable to open %s, not a valid OGR Data Source' % line_filename
         all_lines = []
-        for layer in line_src:
+        for layer in line_ds:
             for feature in layer:
                 if feature.geometry():
                     if feature.geometry().GetGeometryName() == 'LINESTRING':    
@@ -384,20 +390,19 @@ def main():
             raise IOError('No lines found in line data source.')
         if opts.split:
             all_lines = split_lines(all_lines)
-
-
         
-        # Process transect files.  
+        # Process transect files.
+        if opts.transect_file:
             trans_ds = ogr.Open(opts.transect_file)
             if not trans_ds:
                 raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.transect_file
             trans_ds= get_transect_datasource(trans_ds)
                         
-            trans_map = {"trans_len": ["trans_len",
-                                       ogr.FieldDefn("trans_len", ogr.OFTReal),
-                                       lambda st, ln: st.length],
-                         "trans_az": ["trans_az",
-                                       ogr.FieldDefn("trans_az", ogr.OFTReal),
+            trans_map = {"length": ["length",
+                                    ogr.FieldDefn("length", ogr.OFTReal),
+                                    lambda st, ln: st.length],
+                         "azimuth": ["azimuth",
+                                     ogr.FieldDefn("azimuth", ogr.OFTReal),
                                        lambda st, ln: end2end_orientation(asarray(st.coords))],
                          "icpt_count": ["icpt_count",
                                         ogr.FieldDefn("icpt_count", ogr.OFTInteger),
@@ -447,7 +452,7 @@ def main():
                                                               lines))
                         for tol in opts.set_tolerance:
                             n_lines = get_normal_lines(lines,
-                                                       trans.GetField(trans_map['trans_az'][0]),
+                                                       trans.GetField(trans_map['azimuth'][0]),
                                                        tol)
                             trans.SetField(trans_map['%gt_cnt' % tol][0],
                                            len(n_lines))
@@ -472,7 +477,7 @@ def main():
             mkdir(gmt_dir)
         rose_sh = open(path.join(gmt_dir, rose_name), 'wb') 
         if not opts.roi_file:
-            roi_ds = get_roi_datasource(line_src, opts)
+            roi_ds = get_roi_datasource(line_ds, opts)
         rose_sh.write("#This script is incomplete & is intended for inclusion\n")
         rose_sh.write("#into another handwritten GMT script via 'source'.\n")
         rose_sh.write("#This script will place rose diagrams at specific\n")
@@ -505,8 +510,15 @@ def main():
                 for roi in layer:
                     if roi.geometry() and roi.geometry().GetGeometryName() == 'POLYGON':     
                         # Calculate statistics for lines intersecting ROI
-                        slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in get_intersecting_lines(all_lines, roi)]
-                        n_lines = len(slines)
+                        lines = get_intersecting_lines(all_lines, roi)
+                        n_lines = len(lines)
+                        if n_lines < opts.min_lines:
+                            notes.append('WARNING: ROI FID %s contained %s ' \
+                                         'lines and was excluded from processing.\n'
+                                         % (roi.GetFID(), n_lines))
+                            print notes[-1][:-1]
+                            continue
+                        slines = [shapely.wkb.loads(l.GetGeometryRef().ExportToWkb()) for l in lines]
                         line_lengths = asarray([s.length for s in slines])
                         line_orientations = asarray([end2end_orientation(asarray(s)) for s in slines])
                         
@@ -515,20 +527,57 @@ def main():
                             roi.SetField(roi_field[0], roi_field[2](line_lengths))
                         
                         # Write output data.
-                        if n_lines >= opts.min_lines:
-                            write_GMT_roses(line_orientations,
-                                            roi,
-                                            gmt_dir,
-                                            rose_sh,
-                                            get_feature_id(roi, opts.roi_field),
-                                            opts.label)
+                        write_GMT_roses(line_orientations,
+                                        roi,
+                                        gmt_dir,
+                                        rose_sh,
+                                        get_feature_id(roi, opts.roi_field),
+                                        opts.label)
+                        
+                        line_map = {"length": ["length",
+                                               ogr.FieldDefn("length", ogr.OFTReal),
+                                               lambda nn: line_lengths[nn]],
+                                    "azimuth": ["azimuth",
+                                                ogr.FieldDefn("azimuth", ogr.OFTReal),
+                                                lambda nn: line_orientations[nn]]}
+                        drv = ogr.GetDriverByName("ESRI Shapefile")
+                        line_out_name = '-'.join([line_filebase,
+                                                  get_feature_id(roi,
+                                                                 opts.roi_field),
+                                                  '%s.shp' % TIMESTAMP])
+                        line_defn = line_ds[0].GetLayerDefn()
+                        line_out_ds = drv.CreateDataSource(line_out_name)
+                        out_lyr = line_out_ds.CreateLayer(line_defn.GetName(),
+                                                          line_ds[0].GetSpatialRef(),
+                                                          line_defn.GetGeomType())
+                        for ii in xrange(line_defn.GetFieldCount()):
+                            src_fd = line_defn.GetFieldDefn(ii)
+                            dest_fd = ogr.FieldDefn( src_fd.GetName(), src_fd.GetType() )
+                            dest_fd.SetWidth( src_fd.GetWidth() )
+                            dest_fd.SetPrecision( src_fd.GetPrecision() )
+                            out_lyr.CreateField( dest_fd )
+                        for line_field in line_map.values():
+                            out_lyr.CreateField(line_field[1])
+                            f_idx = out_lyr.GetLayerDefn().GetFieldCount() - 1
+                            line_field[0] = out_lyr.GetLayerDefn().GetFieldDefn(f_idx).GetName()
+                        
+                        for nn, line in enumerate(lines):
+                            out_ln = ogr.Feature(feature_def=out_lyr.GetLayerDefn())
+                            for ii in xrange(line_defn.GetFieldCount()):
+                                out_ln.SetField(ii, line.GetField(ii))
+                            for line_field in line_map.values():
+                                out_ln.SetField(line_field[0],
+                                                line_field[2](nn))
+                            out_ln.SetGeometry(line.GetGeometryRef())
+                            out_lyr.SetFeature(out_ln)
                     layer.SetFeature(roi)
                 layer.ResetReading()
         except:
             raise
         finally:
             rose_sh.close()
-        print "Finished processing: %s" % line_filename
+        notes.append("Finished processing: %s\n" % line_filename)
+        print notes[-1][:-1]
         
     notes_handle = open('notes-%s.txt' % TIMESTAMP, 'wb')
     notes_handle.writelines(notes)
