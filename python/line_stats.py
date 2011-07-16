@@ -126,12 +126,18 @@ def parse_cmd():
     
     return (opts, args)
 
-def get_roi_datasource(data_source, opts):
+def get_roi_datasource(data_source, opts, line_base=None):
     """Return an OGR data source with transect LINESTRING features."""
     drv = ogr.GetDriverByName("ESRI Shapefile")
-    if opts.roi_file:
+    if line_base:
         data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
+                             line_base,
                              TIMESTAMP])
+    else:
+        data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
+                             'roi',
+                             TIMESTAMP])        
+    if opts.roi_file:
         out_ds = drv.CreateDataSource('.'.join([data_name, 'shp']))
         out_ds.CopyLayer(data_source[0], data_source.GetName())
     else:
@@ -145,9 +151,6 @@ def get_roi_datasource(data_source, opts):
         roi_geom = ogr.CreateGeometryFromWkb(pts.envelope.wkb,
                                              line_layer.GetSpatialRef())
         
-        data_name = '-'.join([path.split(path.splitext(data_source.name)[0])[1],
-                             'roi',
-                             TIMESTAMP])
         roi_file = '.'.join([data_name, 'shp'])
         
         if path.isfile(roi_file):
@@ -311,9 +314,6 @@ def transect_intercept_spacing(lines, transect):
 def main():
     opts, args = parse_cmd()
     
-    gmt_base = 'gmt'
-    rose_base = 'rose.sh'
-    
     # Start collecting notes on processing.
     notes = ["Processing was completed at:\n",
              "%s\n" % NOW.isoformat(),
@@ -352,21 +352,14 @@ def main():
     else:
         notes.append('The OGR Feature ID (FID) was used to identify ROIs.\n\n')
     
-    if opts.roi_file:
-        roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
-        roi_src = ogr.Open(opts.roi_file)
-        if not roi_src:
-            raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
-        roi_ds = get_roi_datasource(roi_src, opts)
-        
-        gmt_base = ('-').join([roi_filebase, gmt_base])
-        rose_base = '-'.join([roi_filebase, rose_base])
-    
     notes.append('='*11)
     notes.append('\nMessage Log\n')
     notes.append('='*11)
     notes.append('\n\n')
-    for line_filename in args:
+    
+    for line_filename in args:  
+        gmt_base = 'gmt'
+        rose_base = 'rose.sh'
         # Load line features.
         line_ds = ogr.Open(line_filename)
         line_filebase = path.splitext(path.split(line_filename)[1])[0]
@@ -471,13 +464,22 @@ def main():
                 layer.ResetReading()
 
         # Process ROIs
+        if opts.roi_file:
+            roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
+            roi_src = ogr.Open(opts.roi_file)
+            if not roi_src:
+                raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.roi_file
+            roi_ds = get_roi_datasource(roi_src, opts, line_filebase)
+        else:
+            roi_ds = get_roi_datasource(line_ds, opts, line_filebase)
+        
+        gmt_base = ('-').join([roi_filebase, gmt_base])
+        rose_base = '-'.join([roi_filebase, rose_base])
         gmt_dir = ('-').join([line_filebase, gmt_base])
         rose_name = '-'.join([line_filebase, rose_base])
         if not path.isdir(gmt_dir):
             mkdir(gmt_dir)
         rose_sh = open(path.join(gmt_dir, rose_name), 'wb') 
-        if not opts.roi_file:
-            roi_ds = get_roi_datasource(line_ds, opts)
         rose_sh.write("#This script is incomplete & is intended for inclusion\n")
         rose_sh.write("#into another handwritten GMT script via 'source'.\n")
         rose_sh.write("#This script will place rose diagrams at specific\n")
