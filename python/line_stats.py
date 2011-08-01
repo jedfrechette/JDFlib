@@ -510,7 +510,12 @@ def main():
                     f_idx = layer.GetLayerDefn().GetFieldCount() - 1
                     roi_field[0] = layer.GetLayerDefn().GetFieldDefn(f_idx).GetName()
                 for roi in layer:
-                    if roi.geometry() and roi.geometry().GetGeometryName() == 'POLYGON':     
+                    if roi.geometry() and roi.geometry().GetGeometryName() == 'POLYGON':
+                        try:
+                            if not roi.GetField(opts.roi_field):
+                                continue
+                        except ValueError:
+                            continue 
                         # Calculate statistics for lines intersecting ROI
                         lines = get_intersecting_lines(all_lines, roi)
                         n_lines = len(lines)
