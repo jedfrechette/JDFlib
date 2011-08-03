@@ -465,6 +465,10 @@ def main():
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
                                                          ogr.OFTReal)]
+                tol_keys.append('%02gt_smdi' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTInteger)]
                 tol_keys.append('%02gt_smedn' % tol)
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
@@ -524,10 +528,16 @@ def main():
                                                                        opts.transect_field))
                                 cdist_csv.write(','.join(['%.2f' % v for v in cdist]))
                                 cdist_csv.write('\n')
-                                trans.SetField(trans_map['%02gt_smin' % tol][0], spacing.min())
-                                trans.SetField(trans_map['%02gt_smedn' % tol][0], median(spacing))
-                                trans.SetField(trans_map['%02gt_smean' % tol][0], spacing.mean())
-                                trans.SetField(trans_map['%02gt_smax' % tol][0], spacing.max())
+                                trans.SetField(trans_map['%02gt_smin' % tol][0],
+                                               spacing.min())
+                                trans.SetField(trans_map['%02gt_smdi' % tol][0],
+                                               int(mode(around(spacing))[0][0]))
+                                trans.SetField(trans_map['%02gt_smedn' % tol][0],
+                                               median(spacing))
+                                trans.SetField(trans_map['%02gt_smean' % tol][0],
+                                               spacing.mean())
+                                trans.SetField(trans_map['%02gt_smax' % tol][0],
+                                               spacing.max())
                     layer.SetFeature(trans)
                 layer.ResetReading()
         cdist_csv.close()
