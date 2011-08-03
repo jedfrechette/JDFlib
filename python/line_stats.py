@@ -59,7 +59,7 @@ except ImportError:
                        
 # Shapely imports
 try:
-    from shapely.geometry import asMultiPoint, LineString
+    from shapely.geometry import asMultiPoint, LineString, Point
     import shapely
     import shapely.wkb
 except ImportError:
@@ -99,7 +99,7 @@ def parse_cmd():
                            'The default is: "%default"',
                       metavar='TRANSECT_FIELD')
     parser.add_option('-l', '--set_tolerance', dest='set_tolerance',
-                      default='5,10,15,20',
+                      default='85',
                       help="List of azimuth tolerances (in degrees) within "\
                            "which lines will be considered part of the same set. "\
                            'The default is: "%default"',
@@ -283,33 +283,65 @@ def get_normal_lines(lines, azimuth, tol):
     """Return list of lines that are normal to azimuth, within plus or minus tol.
     
     All angles are in degrees."""
-    normal = 2*(azimuth+90)
-    if normal >= 360:
-        normal -= 360
-    normal = normal/2
-        
+    normal = azimuth + 90
     n_lines = []
     for line in lines:
         sline = shapely.wkb.loads(line.GetGeometryRef().ExportToWkb())
-        lo = 2* asarray(end2end_orientation(asarray(sline)))
-        if lo >= 360:
-            lo -= 360
-        lo = lo/2
-        if allclose(normal, lo, atol=tol):
+        lo = end2end_orientation(asarray(sline))
+        if allclose(normal, lo, atol=tol) or \
+           allclose(normal+180, lo, atol=tol) or \
+           allclose(normal, lo+180, atol=tol) :
             n_lines.append(line)
     return n_lines
 
-def transect_intercept_spacing(lines, transect):
-    """Return an array listing the spacing between lines intercepting a transect."""
+def intercept_data(lines, transect):
+    """Return arrays with intercept data between a transect and set of lines.
+    
+    Return Values
+    =============
+    The first array gives the spacing between intercepts.
+    The second array gives the distance along the transect curve of intercepts.
+    The third array gives the angle between the intercepting line and the transect."""
+    s_trans = shapely.wkb.loads(transect.GetGeometryRef().ExportToWkb())
+    if s_trans.type == 'LineString':
+        s_trans = [s_trans]
+    elif s_trans.type != 'MultiLineString':
+        raise ValueError, 'Input transect layers must be a LINESTRING or MULTILINESTRING.'
+    
     spacing = []
-    st = shapely.wkb.loads(transect.GetGeometryRef().ExportToWkb())
-    origin = shapely.geometry.Point(st.coords[0])
-    for ln in lines:
-        sln = shapely.wkb.loads(ln.GetGeometryRef().ExportToWkb())
-        spacing.append(origin.distance(st.intersection(sln)))
-    spacing.sort()
-    spacing = [v - spacing[n-1] for n, v in enumerate(spacing)][1:]
-    return asarray(spacing)
+    curve_dist = []
+    angle = []
+    for st in s_trans:
+        curve_dist.append(0)
+        angle.append(-1)
+        intercepts = [(st.length, -1)]
+        segments = []
+        
+        if len(st.coords) == 2:
+            segments.append(st)
+        else:
+            for start, end in two_iter(list(st.coords)):
+                segments.append(LineString([start, end]))
+    
+        for ln in lines:
+            sln = shapely.wkb.loads(ln.GetGeometryRef().ExportToWkb())
+            if st.intersects(sln):
+                cdist = 0
+                for seg in segments:
+                    if seg.intersects(sln):
+                        cdist += Point(seg.coords[0]).distance(seg.intersection(sln))
+                        break
+                    else:
+                        cdist += seg.length
+                ang = (2*end2end_orientation(asarray(sln)) - 2*end2end_orientation(asarray(st)))/2
+                if ang < 0:
+                    ang +=180
+                intercepts.append((cdist, ang))
+        intercepts.sort()
+        spacing.extend([v[0] - intercepts[n-1][0] for n, v in enumerate(intercepts)][1:])
+        curve_dist.extend([i[0] for i in intercepts])
+        angle.extend([i[1] for i in intercepts])
+    return asarray(spacing), asarray(curve_dist), asarray(angle)
 
 def main():
     opts, args = parse_cmd()
@@ -336,13 +368,7 @@ def main():
     else:
         notes.append('Polyline orientations were approximated as the vector ')
         notes.append('between the\nstart and end points.\n')
-        notes.append('Lengths are for the entire multi-segment line.\n')
-    if opts.transect_file:
-        notes.append('Lines oriented normal to transects within plus or minus ')
-        notes.append('the following\ntolerances were considered sets\n')
-        for tol in opts.set_tolerance:
-            notes.append("%g degrees\n" % tol)
-    notes.append("\n")
+        notes.append('Lengths are for the entire multi-segment line.\n\n')
         
     notes.append("ROIs intersecting less than %i lines were not processed.\n"
                   % opts.min_lines)
@@ -351,6 +377,18 @@ def main():
                      % opts.roi_field)
     else:
         notes.append('The OGR Feature ID (FID) was used to identify ROIs.\n\n')
+    
+    if opts.transect_field:
+        notes.append("The field %s was used to identify transects.\n" 
+                     % opts.transect_field)
+    else:
+        notes.append('The OGR Feature ID (FID) was used to identify transects.\n')    
+    if opts.transect_file:
+        notes.append('Lines oriented normal to transects within plus or minus ')
+        notes.append('the following\ntolerances were considered sets\n')
+        for tol in opts.set_tolerance:
+            notes.append("%g degrees\n" % tol)
+    notes.append("\n")
     
     notes.append('='*11)
     notes.append('\nMessage Log\n')
@@ -390,7 +428,21 @@ def main():
             if not trans_ds:
                 raise IOError, 'Unable to open %s, not a valid OGR Data Source' % opts.transect_file
             trans_ds= get_transect_datasource(trans_ds)
-                        
+            cdist_base = path.split(path.splitext(opts.transect_file)[0])[1]
+            angle_base = path.split(path.splitext(opts.transect_file)[0])[1]
+            cdist_csv = open('.'.join(['-'.join([cdist_base,
+                                                 '%02gt_cdist' % tol,
+                                                 TIMESTAMP]),
+                                       'csv']),
+                             'wb')
+            angle_csv = open('.'.join(['-'.join([angle_base,
+                                                 '%02gt_angle' % tol,
+                                                 TIMESTAMP]),
+                                       'csv']),
+                             'wb')
+            cdist_csv.write('Transect ID:Distance along curve\n')
+            angle_csv.write('Transect ID:Distance along curve\n')
+                   
             trans_map = {"length": ["length",
                                     ogr.FieldDefn("length", ogr.OFTReal),
                                     lambda st, ln: st.length],
@@ -405,64 +457,81 @@ def main():
                                        lambda st, ln: len(ln)/st.length]}
             tol_keys = []
             for tol in opts.set_tolerance:
-                tol_keys.append('%gt_cnt' % tol)
+                tol_keys.append('%02gt_cnt' % tol)
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
                                                          ogr.OFTInteger)]
-                tol_keys.append('%gt_smin' % tol)
+                tol_keys.append('%02gt_smin' % tol)
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
                                                          ogr.OFTReal)]
-                tol_keys.append('%gt_smean' % tol)
+                tol_keys.append('%02gt_smedn' % tol)
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
                                                          ogr.OFTReal)]
-                tol_keys.append('%gt_smax' % tol)
+                tol_keys.append('%02gt_smean' % tol)
+                trans_map[tol_keys[-1]] = [tol_keys[-1],
+                                           ogr.FieldDefn(tol_keys[-1],
+                                                         ogr.OFTReal)]
+                tol_keys.append('%02gt_smax' % tol)
                 trans_map[tol_keys[-1]] = [tol_keys[-1],
                                            ogr.FieldDefn(tol_keys[-1],
                                                          ogr.OFTReal)]
             for layer in trans_ds:
-                for trans_field in trans_map.values():
+                for trans_field in sorted(trans_map.values()):
                     layer.CreateField(trans_field[1])
                     f_idx = layer.GetLayerDefn().GetFieldCount() - 1
                     trans_field[0] = layer.GetLayerDefn().GetFieldDefn(f_idx).GetName()
                 for trans in layer:
-                    if trans.geometry() and trans.geometry().GetGeometryName() == 'LINESTRING':                        
+                    if trans.geometry() \
+                       and trans.geometry().GetGeometryName() in ('LINESTRING',
+                                                                  'MULTILINESTRING'):                        
                         strans = shapely.wkb.loads(trans.GetGeometryRef().ExportToWkb())
-                        if len(strans.coords) != 2:
-                            notes.append("WARNING: TRANSECT FID %s has more " \
-                                         "than 1 segment and was skipped.\n"
-                                         % trans.GetFID())
-                            print notes[-1][:-1]
-                            continue
                         lines = get_intersecting_lines(all_lines, trans)
                         
                         # Update output data source.
                         for key, trans_field in trans_map.iteritems():
                             if key not in tol_keys:
-                                trans.SetField(trans_field[0],
-                                               trans_field[2](strans,
-                                                              lines))
+                                if key != 'azimuth':
+                                    trans.SetField(trans_field[0],
+                                                   trans_field[2](strans,
+                                                                  lines))
+                                elif trans.geometry().GetGeometryName() == 'LINESTRING':
+                                    trans.SetField(trans_field[0],
+                                                   trans_field[2](strans,
+                                                                  lines))
+                                elif trans.geometry().GetGeometryName() == 'MULTILINESTRING':
+                                    azimuths = []
+                                    for ln in strans:
+                                        azimuths.append(trans_field[2](ln,
+                                                                       lines))
+                                    trans.SetField(trans_field[0],
+                                                   asarray(azimuths).mean())
                         for tol in opts.set_tolerance:
                             n_lines = get_normal_lines(lines,
                                                        trans.GetField(trans_map['azimuth'][0]),
                                                        tol)
-                            trans.SetField(trans_map['%gt_cnt' % tol][0],
+                            trans.SetField(trans_map['%02gt_cnt' % tol][0],
                                            len(n_lines))
-                            if len(n_lines) > 1:
-                                spacing = transect_intercept_spacing(n_lines, trans)
-                                trans.SetField(trans_map['%gt_smin' % tol][0], spacing.min())
-                                trans.SetField(trans_map['%gt_smean' % tol][0], spacing.mean())
-                                trans.SetField(trans_map['%gt_smax' % tol][0], spacing.max())
-                                
-                    elif trans.geometry() and trans.geometry().GetGeometryName() == 'MULTILINESTRING':
-                        notes.append("WARNING: MULTILINESTRINGs aren't "
-                                     "supported yet, TRANSECT FID %s was skipped.\n"
-                                     % trans.GetFID())
-                        print notes[-1][:-1]
+                            if len(n_lines) > 0:
+                                spacing, cdist, angle = intercept_data(n_lines,
+                                                                       trans)
+                                angle_csv.write('%s:' % get_feature_id(trans,
+                                                                       opts.transect_field))
+                                angle_csv.write(','.join(['%.2f' % v for v in angle]))
+                                angle_csv.write('\n')
+                                cdist_csv.write('%s:' % get_feature_id(trans,
+                                                                       opts.transect_field))
+                                cdist_csv.write(','.join(['%.2f' % v for v in cdist]))
+                                cdist_csv.write('\n')
+                                trans.SetField(trans_map['%02gt_smin' % tol][0], spacing.min())
+                                trans.SetField(trans_map['%02gt_smedn' % tol][0], median(spacing))
+                                trans.SetField(trans_map['%02gt_smean' % tol][0], spacing.mean())
+                                trans.SetField(trans_map['%02gt_smax' % tol][0], spacing.max())
                     layer.SetFeature(trans)
                 layer.ResetReading()
-
+        cdist_csv.close()
+        angle_csv.close()
         # Process ROIs
         if opts.roi_file:
             roi_filebase = path.splitext(path.split(opts.roi_file)[1])[0]
