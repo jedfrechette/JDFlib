@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 from os.path import split, splitext
 from subprocess import call
 from sys import argv
