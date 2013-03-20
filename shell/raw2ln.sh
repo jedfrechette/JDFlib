@@ -15,7 +15,8 @@ dcraw2ln ()
     dcraw -v -j -w -W -6 -T -H 0 -o 0 -q 3 -g 1 1 ${1};
     file_extention=$(echo ${1} | sed 's/^.*\(\.[^.]*\)$/\1/')
 	file_name=$(echo ${1} | sed "s/$file_extention//")
-	convert $file_name.tiff -compress LZW $file_name\_ln16.tif
+	convert $file_name.tiff -compress Zip $file_name\_ln16.tif
+    exiftool -overwrite_original -TagsFromFile ${1} $file_name\_ln16.tif
     convert $file_name\_ln16.tif -compress Zip $file_name\_lnh.exr
     # /bin/rm $file_name.tiff
 }
@@ -25,7 +26,8 @@ dcraw2srgb8 ()
     dcraw -v -j -w -W -T -H 0 -o 1 -q 3 -g 2.4 12.92 ${1};
     file_extention=$(echo ${1} | sed 's/^.*\(\.[^.]*\)$/\1/')
 	file_name=$(echo ${1} | sed "s/$file_extention//")
-	convert $file_name.tiff -compress LZW $file_name\_srgb8.tif
+	convert $file_name.tiff -compress Zip $file_name\_srgb8.tif
+    exiftool -overwrite_original -TagsFromFile ${1} $file_name\_srgb8.tif
     #/bin/rm $file_name.tiff
 }
 
