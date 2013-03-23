@@ -39,16 +39,16 @@ process ()
 
 	dir="$1"
 
- ## Convert every CR2 file in the directory to tif
-	if [ "$(ls $dir/*.CR2)" != "" ]; 
+ ## Convert every DNG file in the directory to tif
+	if [ "$(ls $dir/*.DNG)" != "" ]; 
 	then
-	    echo "Converting CR2 files to tif"
-	    for i in $(ls $dir/*.CR2); do
+	    echo "Converting DNG files to tif"
+	    for i in $(ls $dir/*.DNG); do
 		dcraw2srgb8 $i
         dcraw2ln $i
 	    done
 	else
-	    echo "No CR2 Files, Moving On"
+	    echo "No DNG Files, Moving On"
 	fi
 
 	if [ "$(ls $dir/*.NEF)" != "" ];
@@ -70,18 +70,9 @@ process ()
 	dir=$(dirname $frame)
 	file_extention=$(echo $frame | sed 's/^.*\(\.[^.]*\)$/\1/')
 	file_name=$(echo $frame | sed "s/$file_extention//")
-	if [ "$file_extention" == ".CR2" ];
-	then
-	    echo "Converting CR2 file to tif"
-	    dcraw2srgb8 $frame
-        dcraw2ln $frame
-	fi
-	if [ "$file_extention" == ".NEF" ];
-	then
-	    echo "Converting NEF file to tif"
-	    dcraw2srgb8 $frame
-        dcraw2ln $frame
-	fi
+
+    dcraw2srgb8 $frame
+    dcraw2ln $frame
 
     fi
 }
