@@ -2,12 +2,13 @@
 Based on original lapse.lua script by Fraser McCrossan
 Tested on SD780 IS.
 
-An accurate intervalometer script, with locked focus and exposure, and screen power off options.
+An accurate intervalometer script, with locked focus and exposure, and screen
+power off options.
 
 Features:
- - input is frame interval plus total desired run-time (or "endless")
- - displays frame count, frame total and remaining time after each frame
-   (in endless mode, displays frame count and elapsed time)
+ - accurate user defined frame interval
+ - shoots continuously until stopped by user, out of power, or out of disk
+   space.
  - honours the "Display" button during frame delays (so you can
    get it running then turn off the display to save power)
  - can turn off the display a given number of frames after starting
@@ -21,42 +22,26 @@ Features:
 --[[
 @title Locked Time-lapse
 @param s Secs/frame
-@default s 5
-@param h Sequence hours
-@default h 0
-@param m Sequence minutes
-@default m 5
-@param e Endless? 0=No 1=Yes
-@default e 0
+@default s 30
 @param f Focus: 0=Every 1=Start
 @default f 0
 @param d Display off frame 0=never
-@default d 0
+@default d 3
+@param v Min Battery Voltage (mV)
+@default v 2150
+@range v 0 10000
 --]]
 
 -- convert parameters into readable variable names
-secs_frame, hours, minutes, endless, focus_at_start, display_off_frame = s, h, m, (e > 0), (f > 0), d
+secs_frame, focus_at_start, display_off_frame, min_vbatt = s, (f > 0), d, v
 
 props = require "propcase"
 
 -- derive actual running parameters from the more human-friendly input
 -- parameters
-function calculate_parameters (seconds_per_frame, hours, minutes, start_ticks)
-   local ticks_per_frame = 1000 * secs_frame -- ticks per frame
-   local total_frames = (hours * 3600 + minutes * 60) / secs_frame -- total frames
-   local end_ticks = start_ticks + total_frames * ticks_per_frame -- ticks at end of sequence
-   return ticks_per_frame, total_frames, end_ticks
-end
-
-function print_status (frame, total_frames, ticks_per_frame, end_ticks, endless)
-   local free = get_jpg_count()
-   if endless then
-      local h, m, s = ticks_to_hms(frame * ticks_per_frame)
-      print("#" .. frame .. ", " .. h .. "h " .. m .. "m " .. s .. "s")
-   else
-      local h, m, s = ticks_to_hms(end_ticks - get_tick_count())
-      print(frame .. "/" .. total_frames .. ", " .. h .. "h" .. m .. "m" .. s .. "s/" .. free .. " left")
-   end
+function calculate_parameters (seconds_per_frame)
+   local ticks_per_frame = 1000 * seconds_per_frame -- ticks per frame
+   return ticks_per_frame
 end
 
 function ticks_to_hms (ticks)
@@ -137,7 +122,7 @@ end
 
 start_ticks = get_tick_count()
 
-ticks_per_frame, total_frames, end_ticks = calculate_parameters(secs_frame, hours, minutes, start_ticks)
+ticks_per_frame = calculate_parameters(secs_frame)
 
 frame = 1
 original_display_mode = get_prop(props.DISPLAY_MODE)
@@ -145,18 +130,19 @@ target_display_mode = 2 -- off
 
 print "Press SET to exit"
 
-while endless or frame <= total_frames do
-   print_status(frame, total_frames, ticks_per_frame, end_ticks, endless)
+abort = false
+repeat
    if display_off_frame > 0 and frame >= display_off_frame then
       seek_display_mode(target_display_mode)
    end
    shoot()
    if frame_delay(frame, start_ticks, ticks_per_frame) then
-      print "User quit"
-      break
+      abort = true
    end
+   if ( get_vbatt() < min_vbatt ) then abort = true end
+   if (get_jpg_count() < 1 ) then abort = true end
    frame = frame + 1
-end
+until (abort)
 
 -- restore display mode
 if display_off_frame > 0 then
