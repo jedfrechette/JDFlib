@@ -1,8 +1,8 @@
 --[[
-Author: Fraser McCrossan
-Tested on G9, should work on most cameras.
+Based on original lapse.lua script by Fraser McCrossan
+Tested on SD780 IS.
 
-An accurate intervalometer script, with pre-focus and screen power off options.
+An accurate intervalometer script, with locked focus and exposure, and screen power off options.
 
 Features:
  - input is frame interval plus total desired run-time (or "endless")
@@ -19,7 +19,7 @@ Features:
 ]]
 
 --[[
-@title Time-lapse
+@title Locked Time-lapse
 @param s Secs/frame
 @default s 5
 @param h Sequence hours
