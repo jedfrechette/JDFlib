@@ -28,7 +28,7 @@
 #% key: input
 #% type: string
 #% gisprompt: old,cell,raster
-#% description: The raster map to close
+#% description: The input raster map to perform closeing on
 #% required : yes
 #%END
 
@@ -42,8 +42,8 @@
 
 #%option
 #% key: distance
-#% type: integer
-#% description: Distance used for dilation and erosion
+#% type: double
+#% description: Distance in m used for dilation and erosion
 #% required : yes
 #%END
 
