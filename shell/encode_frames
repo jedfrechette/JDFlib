@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Use -crf 22 for HD video and -crf 20 for SD video.
+options="-r 24 -vcodec libx264 -crf 22 -preset veryslow -profile high"
+outfile="video.mp4"
+
+ffmpeg -y -i "$1" -threads 2 $options "$outfile"
