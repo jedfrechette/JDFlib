@@ -226,7 +226,10 @@ def main_gui():
             def worker():
                 try:
                     result = compute_recommendation(stock)
-                    result_holder['result'] = result
+                    if isinstance(result, str):
+                        result_holder['error'] = result
+                    else:
+                        result_holder['result'] = result
                 except Exception as e:
                     result_holder['error'] = str(e)
 
