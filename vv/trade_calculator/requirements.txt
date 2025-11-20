@@ -1,0 +1,4 @@
+FreeSimpleGUIQt>=2.0.0
+numpy>=2.1
+scipy>=1.15.1
+yfinance>=0.2.54
